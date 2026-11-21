@@ -183,7 +183,7 @@ const (
 
 // findDescriptor returns the offset in data of the first candidate
 // descriptor, or -1 if there is none. A candidate starts with a valid
-// filename field (tag magicByte) whose value ends in protoExtn.
+// filename field (tag magicByte) whose value passes validName.
 func findDescriptor(data []byte) int {
 	// to locate the start of a protobuf descriptor,
 	// first scan for the filename extension .proto
@@ -214,15 +214,37 @@ func findDescriptor(data []byte) int {
 			start--
 		}
 
-		// check we have found a valid field
+		// check we have found a valid field, with the tag at start
 		end := index + len(protoExtn)
-		if _, _, n := protowire.ConsumeField(data[start:end]); n != end-start {
+		if name, n := protowire.ConsumeBytes(data[start+1 : end]); n != end-start-1 || !validName(name) {
 			offset = index + 1 // skip past found protoExtn
 			continue
 		}
 		return start
 	}
 	return -1
+}
+
+// validName reports whether name looks like a .proto file path as given to
+// protoc: a relative, slash-separated path of ASCII letters, digits, '_',
+// '-' and '.', with no empty elements, ending in protoExtn after a
+// non-empty base name. It rejects names made from unrelated bytes that
+// happen to precede a protoExtn in a binary.
+func validName(name []byte) bool {
+	base, ok := bytes.CutSuffix(name, []byte(protoExtn))
+	if !ok || len(base) == 0 || base[0] == '/' || base[len(base)-1] == '/' ||
+		bytes.Contains(base, []byte("//")) {
+		return false
+	}
+	for _, c := range base {
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case c == '_' || c == '-' || c == '.' || c == '/':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Scanner) addFileDescriptorSet(encoded []byte) error {

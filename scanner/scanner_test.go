@@ -569,3 +569,49 @@ func TestScanFileNameOnly(t *testing.T) {
 		})
 	}
 }
+
+// TestFindDescriptorNames checks that only plausible .proto file paths are
+// taken as filenames.
+func TestFindDescriptorNames(t *testing.T) {
+	prefix := []byte("filler")
+	tests := []struct {
+		name string
+		ok   bool
+	}{
+		{"a.proto", true},
+		{"dir/sub/file.proto", true},
+		{"A-b_c.d/E9.proto", true},
+		{"../escape.proto", true},
+		{"./a.proto", true},
+
+		{".proto", false},
+		{"dir/.proto", false},
+		{"/abs.proto", false},
+		{"dir//a.proto", false},
+		{"a b.proto", false},
+		{"a\x00b.proto", false},
+		{"a\tb.proto", false},
+		{"café.proto", false},
+		{"a+b.proto", false},
+		{"a\\b.proto", false},
+		{"a:b.proto", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := descriptor(t, tt.name, prefix, []byte("filler"))
+			want := -1
+			if tt.ok {
+				want = len(prefix)
+			}
+			if got := findDescriptor(data); got != want {
+				t.Errorf("findDescriptor(% x) = %d, want %d", data, got, want)
+			}
+		})
+	}
+
+	// A bad name does not hide a good one after it.
+	data := slices.Concat(descriptor(t, "a b.proto", prefix, nil), descriptor(t, "a.proto", prefix, nil))
+	if got, want := findDescriptor(data), len(data)-len(descriptor(t, "a.proto", nil, nil)); got != want {
+		t.Errorf("findDescriptor(% x) = %d, want %d", data, got, want)
+	}
+}
