@@ -120,46 +120,19 @@ func (s *Scanner) ScanFile(source string) error {
 	if err != nil {
 		return err
 	}
-	const protoExtn = ".proto"
-	const magicByte = 0xa // tag for BytesType(2) Number(1)
-
-	// stepbackLength is the difference between index and start when the
-	// filename length is the same as magicByte: the length byte, which is
-	// then found instead of the tag, plus the name before the extension.
-	const stepbackLength = 1 + magicByte - len(protoExtn)
-
 	var errs Errors
 
-	// to locate the start of a protobuf descriptor,
-	// first scan for the filename extension .proto
-	// once found look for the protobuf filename tag byte preceding the name
 	offset := 0
 	for offset < len(data) {
-		index := bytes.Index(data[offset:], []byte(protoExtn))
-		if index == -1 {
-			break
-		}
-		index += offset
-
-		start := bytes.LastIndexByte(data[offset:index], magicByte)
+		start := findDescriptor(data[offset:])
 		if start == -1 {
-			offset = index + 1
-			continue
+			break
 		}
 		start += offset
 
-		// If the filename length is the same as the tag value, then what we found could
-		// is actually the length and the preceding byte should also be the tag
-		if index-start == stepbackLength && start > 0 && data[start-1] == magicByte {
-			start -= 1
-		}
-
-		// check we have found a valid field
-		_, _, n := protowire.ConsumeField(data[start : index+len(protoExtn)])
-		if n != len(data[start:index+len(protoExtn)]) {
-			offset = index + 1
-			continue
-		}
+		// n is the length of the filename field, which ends with protoExtn.
+		_, _, n := protowire.ConsumeField(data[start:])
+		index := start + n - len(protoExtn)
 
 		isFileSet := false
 		if start-offset > 2 {
@@ -197,6 +170,60 @@ func (s *Scanner) ScanFile(source string) error {
 		return errs
 	}
 	return nil
+}
+
+const (
+	protoExtn = ".proto"
+	magicByte = 0xa // tag for BytesType(2) Number(1)
+
+	// stepbackLength is the difference between index and start when the
+	// filename length is the same as magicByte: the length byte, which is
+	// then found instead of the tag, plus the name before the extension.
+	stepbackLength = 1 + magicByte - len(protoExtn)
+)
+
+// findDescriptor returns the offset in data of the first candidate
+// descriptor, or -1 if there is none. A candidate starts with a valid
+// filename field (tag magicByte) whose value ends in protoExtn.
+func findDescriptor(data []byte) int {
+	// to locate the start of a protobuf descriptor,
+	// first scan for the filename extension .proto
+	// once found look for the protobuf filename tag byte preceding the name
+	offset := 0
+	for offset < len(data) {
+		index := bytes.Index(data[offset:], []byte(protoExtn))
+		if index == -1 {
+			return -1
+		}
+		index += offset
+
+		start := bytes.LastIndexByte(data[offset:index], magicByte)
+		if start == -1 {
+			offset = index + 1
+			continue
+		}
+		start += offset
+
+		// If the filename length is the same as the tag value, then what we found
+		// is actually the length and the preceding byte should also be the tag.
+		// A name of length magicByte-1 preceded by a magicByte is just as valid
+		// read from that byte, with its length as the first character of the
+		// name. Names are unlikely to start with that control character, so
+		// in that case keep the shorter name.
+		if index-start == stepbackLength && start > 0 && data[start-1] == magicByte &&
+			data[start+1] != magicByte-1 {
+			start--
+		}
+
+		// check we have found a valid field
+		end := index + len(protoExtn)
+		if _, _, n := protowire.ConsumeField(data[start:end]); n != end-start {
+			offset = index + 1 // skip past found protoExtn
+			continue
+		}
+		return start
+	}
+	return -1
 }
 
 func (s *Scanner) addFileDescriptorSet(encoded []byte) error {

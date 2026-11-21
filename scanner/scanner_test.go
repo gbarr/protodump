@@ -1,9 +1,12 @@
 package scanner
 
 import (
+	"bytes"
 	"errors"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -214,5 +217,104 @@ func TestDumpWriteError(t *testing.T) {
 	want := errors.New("disk full")
 	if err := s.Dump(failingWriter{want}); !errors.Is(err, want) {
 		t.Errorf("Dump error = %v, want %v", err, want)
+	}
+}
+
+func descriptor(t *testing.T, name string, prefix, suffix []byte) []byte {
+	t.Helper()
+	file := &descriptorpb.DescriptorProto{Name: new(name)}
+	encoded, err := proto.Marshal(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return slices.Concat(bytes.Clone(prefix), encoded, suffix)
+}
+
+// randomBytes returns n random bytes. None of them is magicByte or '.', so
+// that they cannot form a tag byte or a protoExtn of their own. If tagLast is
+// true, the last byte is set to magicByte.
+func randomBytes(r *rand.Rand, n int, tagLast bool) []byte {
+	b := make([]byte, n)
+	for i := range b {
+		for {
+			c := byte(r.UintN(256))
+			if c != magicByte && c != '.' {
+				b[i] = c
+				break
+			}
+		}
+	}
+	if tagLast && n > 0 {
+		b[n-1] = magicByte
+	}
+	return b
+}
+
+func TestFindDescriptor(t *testing.T) {
+	// A fixed seed keeps failures reproducible.
+	r := rand.New(rand.NewPCG(1, 2))
+	random := func(n int) []byte { return randomBytes(r, n, false) }
+	ext := []byte(protoExtn)
+	tag := []byte{magicByte}
+
+	tests := []struct {
+		desc   string
+		prefix []byte
+		suffix []byte
+		name   string
+		want   int
+	}{
+		{"no prefix or suffix", nil, nil, "a.proto", 0},
+		{"random prefix", randomBytes(r, 16, false), nil, "a.proto", 16},
+		{"random suffix", nil, randomBytes(r, 16, false), "a.proto", 0},
+		{"random prefix and suffix", randomBytes(r, 7, false), randomBytes(r, 9, false), "dir/file.proto", 7},
+		{"prefix ends in tag", randomBytes(r, 16, true), randomBytes(r, 8, false), "a.proto", 16},
+		{"prefix is only tag", randomBytes(r, 1, true), nil, "a.proto", 1},
+
+		// Name lengths of 9 and 10 either side of magicByte, where the
+		// length byte can be mistaken for the tag.
+		{"name length 9", randomBytes(r, 12, false), randomBytes(r, 12, false), "abc.proto", 12},
+		{"name length 9, prefix ends in tag", randomBytes(r, 12, true), randomBytes(r, 12, false), "abc.proto", 12},
+		{"name length 10", randomBytes(r, 12, false), randomBytes(r, 12, false), "user.proto", 12},
+		{"name length 10, prefix ends in tag", randomBytes(r, 12, true), randomBytes(r, 12, false), "user.proto", 12},
+		{"name length 10, no prefix", nil, randomBytes(r, 12, false), "user.proto", 0},
+		{"name length 10, prefix is only tag", randomBytes(r, 1, true), nil, "user.proto", 1},
+		{"name length 11", randomBytes(r, 12, false), randomBytes(r, 12, false), "users.proto", 12},
+		{"name length 11, prefix ends in tag", randomBytes(r, 12, true), randomBytes(r, 12, false), "users.proto", 12},
+
+		// Names that do not end in protoExtn are never found.
+		{"not proto", randomBytes(r, 12, false), randomBytes(r, 12, false), "a.txt", -1},
+		{"not proto, prefix ends in tag", randomBytes(r, 12, true), randomBytes(r, 12, false), "a.txt", -1},
+		{"not proto, name length 9", randomBytes(r, 12, false), randomBytes(r, 12, false), "abc.protx", -1},
+		{"not proto, name length 9, prefix ends in tag", randomBytes(r, 12, true), randomBytes(r, 12, false), "abc.protx", -1},
+		{"not proto, name length 10", randomBytes(r, 12, false), randomBytes(r, 12, false), "user.protx", -1},
+		{"not proto, name length 10, prefix ends in tag", randomBytes(r, 12, true), randomBytes(r, 12, false), "user.protx", -1},
+		{"proto not at end of name", randomBytes(r, 12, false), randomBytes(r, 12, false), "a.proto.bak", -1},
+		{"empty name", randomBytes(r, 12, true), randomBytes(r, 12, false), "", -1},
+
+		// Prefixes containing protoExtn that is not part of a valid
+		// filename field, which must be skipped over.
+		{"prefix has proto with no tag", slices.Concat(random(8), ext, random(8)), nil, "a.proto", 22},
+		{"prefix has proto with tag", slices.Concat(random(4), tag, random(4), ext, random(8)), nil, "a.proto", 23},
+		{"prefix has proto, length too long", slices.Concat(random(4), tag, []byte{0x20}, []byte("abc"), ext, random(4)), nil, "a.proto", 19},
+		{"prefix has proto, length too short", slices.Concat(random(4), tag, []byte{0x02}, []byte("abc"), ext, random(4)), nil, "a.proto", 19},
+		{"prefix has proto at end", slices.Concat(random(8), ext), nil, "a.proto", 14},
+		{"prefix has proto then tag", slices.Concat(random(8), ext, random(4), tag), randomBytes(r, 8, false), "a.proto", 19},
+		{"prefix has proto twice", slices.Concat(random(4), ext, random(4), tag, random(2), ext, random(4)), randomBytes(r, 8, false), "a.proto", 27},
+		{"prefix has proto, name length 10", slices.Concat(random(4), tag, random(4), ext, random(4)), randomBytes(r, 8, false), "user.proto", 19},
+		{"prefix has proto, name length 10, prefix ends in tag", slices.Concat(random(4), tag, random(4), ext, random(4), tag), randomBytes(r, 8, false), "user.proto", 20},
+		{"prefix has proto, not proto", slices.Concat(random(4), tag, random(4), ext, random(4)), randomBytes(r, 8, false), "a.txt", -1},
+		{"prefix has proto, not proto, prefix ends in tag", slices.Concat(random(8), ext, random(4), tag), randomBytes(r, 8, false), "user.protx", -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			if strings.HasSuffix(tt.name, protoExtn) != (tt.want != -1) {
+				t.Fatalf("bad test: name %q with want %d", tt.name, tt.want)
+			}
+			data := descriptor(t, tt.name, tt.prefix, tt.suffix)
+			if got := findDescriptor(data); got != tt.want {
+				t.Errorf("findDescriptor(% x) = %d, want %d", data, got, tt.want)
+			}
+		})
 	}
 }
