@@ -323,6 +323,11 @@ func TestFindDescriptor(t *testing.T) {
 		{"random prefix and suffix", randomBytes(r, 7, false), randomBytes(r, 9, false), "dir/file.proto", 7},
 		{"prefix ends in tag", randomBytes(r, 16, true), randomBytes(r, 8, false), "a.proto", 16},
 		{"prefix is only tag", randomBytes(r, 1, true), nil, "a.proto", 1},
+		{"name contains multi .proto", nil, nil, "foo.protos/bar.proto", 0},
+		{"name contains multi .proto, random prefix", randomBytes(r, 12, false), randomBytes(r, 8, false), "foo.protos/bar.proto", 12},
+		{"name contains multi .proto, prefix ends in tag", randomBytes(r, 12, true), randomBytes(r, 8, false), "my.protocol/v1/a.proto", 12},
+		{"name ends in .proto twice", randomBytes(r, 12, false), randomBytes(r, 8, false), "a.proto.proto", 12},
+		{"directory named .proto", randomBytes(r, 12, false), randomBytes(r, 8, false), ".proto/a.proto", 12},
 
 		// Name lengths of 9 and 10 either side of magicByte, where the
 		// length byte can be mistaken for the tag.
@@ -634,6 +639,8 @@ func TestFindDescriptorNames(t *testing.T) {
 		{"A-b_c.d/E9.proto", true},
 		{"../escape.proto", true},
 		{"./a.proto", true},
+		{"a.proto.proto", true},
+		{"foo.protos/bar.proto", true},
 
 		{".proto", false},
 		{"dir/.proto", false},
@@ -803,5 +810,27 @@ func TestScanBytesFileSet(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestFindDescriptorLookBack checks the limit on how far findDescriptor
+// looks back from protoExtn for the tag byte. The tag may be up to
+// maxLookBack bytes before protoExtn, so with a 2-byte length the part of
+// the name before protoExtn may be up to maxLookBack-3 bytes.
+func TestFindDescriptorLookBack(t *testing.T) {
+	prefix := []byte("filler")
+	for _, tt := range []struct {
+		baseLen int
+		want    int
+	}{
+		{maxLookBack - 3, len(prefix)},
+		{maxLookBack - 2, -1},
+		{maxLookBack * 2, -1},
+	} {
+		name := strings.Repeat("a", tt.baseLen) + protoExtn
+		data := descriptor(t, name, prefix, []byte("filler"))
+		if got := findDescriptor(data); got != tt.want {
+			t.Errorf("findDescriptor with a %d-byte name = %d, want %d", len(name), got, tt.want)
+		}
 	}
 }

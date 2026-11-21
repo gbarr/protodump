@@ -182,11 +182,17 @@ const (
 	// filename length is the same as magicByte: the length byte, which is
 	// then found instead of the tag, plus the name before the extension.
 	stepbackLength = 1 + magicByte - len(protoExtn)
+
+	// maxLookBack is how far findDescriptor looks back from protoExtn for
+	// the tag byte, which limits filenames to about that length.
+	maxLookBack = 4096
 )
 
 // findDescriptor returns the offset in data of the first candidate
 // descriptor, or -1 if there is none. A candidate starts with a valid
-// filename field (tag magicByte) whose value passes validName.
+// filename field (tag magicByte) whose value passes validName. The tag must
+// be within maxLookBack bytes before protoExtn, so longer filenames are not
+// found.
 func findDescriptor(data []byte) int {
 	// to locate the start of a protobuf descriptor,
 	// first scan for the filename extension .proto
@@ -199,12 +205,16 @@ func findDescriptor(data []byte) int {
 		}
 		index += offset
 
-		start := bytes.LastIndexByte(data[offset:index], magicByte)
+		// Limit how far back to look for magicByte, so that data with no
+		// tag bytes is not scanned repeatedly. This also limits how long a
+		// filename can be.
+		magicScanStart := max(0, index-maxLookBack)
+		start := bytes.LastIndexByte(data[magicScanStart:index], magicByte)
 		if start == -1 {
 			offset = index + 1 // skip past found protoExtn
 			continue
 		}
-		start += offset
+		start += magicScanStart
 
 		// If the filename length is the same as the tag value, then what we found
 		// is actually the length and the preceding byte should also be the tag.
