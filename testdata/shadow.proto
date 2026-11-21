@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package test.shadow;
+
+import "common/types.proto";
+
+service S {
+  rpc W (U) returns (.test.shadow.W);
+}
+
+message T {
+}
+
+message U {
+}
+
+message V {
+}
+
+message W {
+}
+
+message M {
+  enum E {
+    V = 0;
+  }
+
+  message T {
+  }
+
+  message N {
+    .test.shadow.T shadowed_by_parent = 1;
+    U plain = 2;
+  }
+
+  .test.shadow.T shadowed = 3;
+  M.T nested = 4;
+  .test.shadow.V shadowed_by_enum_value = 5;
+  .test.common.Shared other_package = 6;
+}

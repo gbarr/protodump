@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package test.common;
+
+enum Colour {
+  COLOUR_UNSPECIFIED = 0;
+  COLOUR_RED = 1;
+}
+
+message Shared {
+  string id = 1;
+}

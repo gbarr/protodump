@@ -1,0 +1,13 @@
+edition = "2024";
+
+package test.editions2024;
+
+enum Shade {
+  reserved SHADE_GONE;
+  SHADE_UNSPECIFIED = 0;
+}
+
+message Item {
+  reserved gone;
+  int32 id = 1;
+}

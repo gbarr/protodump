@@ -1,0 +1,976 @@
+file:  {
+  name:  "common/types.proto"
+  package:  "test.common"
+  message_type:  {
+    name:  "Shared"
+    field:  {
+      name:  "id"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      json_name:  "id"
+    }
+  }
+  enum_type:  {
+    name:  "Colour"
+    value:  {
+      name:  "COLOUR_UNSPECIFIED"
+      number:  0
+    }
+    value:  {
+      name:  "COLOUR_RED"
+      number:  1
+    }
+  }
+  syntax:  "proto3"
+}
+file:  {
+  name:  "proto2.proto"
+  package:  "test.proto2"
+  dependency:  "common/types.proto"
+  message_type:  {
+    name:  "Request"
+    field:  {
+      name:  "query"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      default_value:  "a\"b\tc\r\n"
+      json_name:  "query"
+    }
+    field:  {
+      name:  "page"
+      number:  2
+      label:  LABEL_REQUIRED
+      type:  TYPE_INT32
+      default_value:  "-7"
+      json_name:  "page"
+    }
+    field:  {
+      name:  "ids"
+      number:  3
+      label:  LABEL_REPEATED
+      type:  TYPE_INT32
+      json_name:  "ids"
+      options:  {
+        packed:  true
+      }
+    }
+    field:  {
+      name:  "token"
+      number:  4
+      label:  LABEL_OPTIONAL
+      type:  TYPE_BYTES
+      default_value:  "\\001\\377x"
+      json_name:  "token"
+    }
+    field:  {
+      name:  "ratio"
+      number:  5
+      label:  LABEL_OPTIONAL
+      type:  TYPE_DOUBLE
+      default_value:  "inf"
+      json_name:  "ratio"
+    }
+    field:  {
+      name:  "low"
+      number:  6
+      label:  LABEL_OPTIONAL
+      type:  TYPE_DOUBLE
+      default_value:  "-inf"
+      json_name:  "low"
+    }
+    field:  {
+      name:  "undefined"
+      number:  7
+      label:  LABEL_OPTIONAL
+      type:  TYPE_DOUBLE
+      default_value:  "nan"
+      json_name:  "undefined"
+    }
+    field:  {
+      name:  "scale"
+      number:  8
+      label:  LABEL_OPTIONAL
+      type:  TYPE_FLOAT
+      default_value:  "0.25"
+      json_name:  "scale"
+    }
+    field:  {
+      name:  "precise"
+      number:  9
+      label:  LABEL_OPTIONAL
+      type:  TYPE_DOUBLE
+      default_value:  "1.5"
+      json_name:  "precise"
+    }
+    field:  {
+      name:  "kind"
+      number:  10
+      label:  LABEL_OPTIONAL
+      type:  TYPE_ENUM
+      type_name:  ".test.proto2.Request.Kind"
+      default_value:  "KIND_B"
+      json_name:  "kind"
+    }
+    field:  {
+      name:  "big"
+      number:  11
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT64
+      json_name:  "big"
+      options:  {
+        jstype:  JS_STRING
+        deprecated:  true
+      }
+    }
+    field:  {
+      name:  "secret"
+      number:  12
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      json_name:  "secret"
+      options:  {
+        debug_redact:  true
+        targets:  TARGET_TYPE_FIELD
+        targets:  TARGET_TYPE_MESSAGE
+      }
+    }
+    field:  {
+      name:  "renamed"
+      number:  13
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      json_name:  "customName"
+    }
+    field:  {
+      name:  "inner"
+      number:  14
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.proto2.Request.Inner"
+      json_name:  "inner"
+    }
+    field:  {
+      name:  "shared"
+      number:  15
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.common.Shared"
+      json_name:  "shared"
+    }
+    field:  {
+      name:  "status"
+      number:  16
+      label:  LABEL_OPTIONAL
+      type:  TYPE_ENUM
+      type_name:  ".test.proto2.Status"
+      json_name:  "status"
+    }
+    field:  {
+      name:  "number"
+      number:  17
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      oneof_index:  0
+      json_name:  "number"
+    }
+    field:  {
+      name:  "text"
+      number:  18
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      oneof_index:  0
+      json_name:  "text"
+    }
+    field:  {
+      name:  "result"
+      number:  19
+      label:  LABEL_OPTIONAL
+      type:  TYPE_GROUP
+      type_name:  ".test.proto2.Request.Result"
+      json_name:  "result"
+    }
+    field:  {
+      name:  "by_name"
+      number:  20
+      label:  LABEL_REPEATED
+      type:  TYPE_MESSAGE
+      type_name:  ".test.proto2.Request.ByNameEntry"
+      json_name:  "byName"
+    }
+    nested_type:  {
+      name:  "Inner"
+      field:  {
+        name:  "x"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_INT32
+        json_name:  "x"
+      }
+    }
+    nested_type:  {
+      name:  "Result"
+      field:  {
+        name:  "url"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_STRING
+        json_name:  "url"
+      }
+    }
+    nested_type:  {
+      name:  "ByNameEntry"
+      field:  {
+        name:  "key"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_STRING
+        json_name:  "key"
+      }
+      field:  {
+        name:  "value"
+        number:  2
+        label:  LABEL_OPTIONAL
+        type:  TYPE_MESSAGE
+        type_name:  ".test.proto2.Request.Inner"
+        json_name:  "value"
+      }
+      options:  {
+        map_entry:  true
+      }
+    }
+    enum_type:  {
+      name:  "Kind"
+      value:  {
+        name:  "KIND_A"
+        number:  0
+      }
+      value:  {
+        name:  "KIND_B"
+        number:  1
+      }
+    }
+    extension_range:  {
+      start:  100
+      end:  200
+    }
+    oneof_decl:  {
+      name:  "choice"
+    }
+    options:  {
+      no_standard_descriptor_accessor:  true
+      deprecated:  true
+    }
+    reserved_range:  {
+      start:  25
+      end:  26
+    }
+    reserved_range:  {
+      start:  30
+      end:  40
+    }
+    reserved_range:  {
+      start:  1000
+      end:  536870912
+    }
+    reserved_name:  "old_field"
+  }
+  message_type:  {
+    name:  "Response"
+    extension:  {
+      name:  "rank"
+      number:  100
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      extendee:  ".test.proto2.Request"
+      json_name:  "rank"
+    }
+    extension:  {
+      name:  "detail"
+      number:  101
+      label:  LABEL_OPTIONAL
+      type:  TYPE_GROUP
+      type_name:  ".test.proto2.Response.Detail"
+      extendee:  ".test.proto2.Request"
+      json_name:  "detail"
+    }
+    nested_type:  {
+      name:  "Detail"
+      field:  {
+        name:  "note"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_STRING
+        json_name:  "note"
+      }
+    }
+    nested_type:  {
+      name:  "After"
+    }
+  }
+  message_type:  {
+    name:  "Extra"
+    field:  {
+      name:  "a"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      json_name:  "a"
+    }
+  }
+  message_type:  {
+    name:  "Ordering"
+    field:  {
+      name:  "g"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_GROUP
+      type_name:  ".test.proto2.Ordering.G"
+      json_name:  "g"
+    }
+    field:  {
+      name:  "m"
+      number:  2
+      label:  LABEL_REPEATED
+      type:  TYPE_MESSAGE
+      type_name:  ".test.proto2.Ordering.MEntry"
+      json_name:  "m"
+    }
+    nested_type:  {
+      name:  "A"
+    }
+    nested_type:  {
+      name:  "G"
+    }
+    nested_type:  {
+      name:  "B"
+    }
+    nested_type:  {
+      name:  "MEntry"
+      field:  {
+        name:  "key"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_STRING
+        json_name:  "key"
+      }
+      field:  {
+        name:  "value"
+        number:  2
+        label:  LABEL_OPTIONAL
+        type:  TYPE_INT32
+        json_name:  "value"
+      }
+      options:  {
+        map_entry:  true
+      }
+    }
+    nested_type:  {
+      name:  "C"
+    }
+  }
+  enum_type:  {
+    name:  "Status"
+    value:  {
+      name:  "STATUS_UNKNOWN"
+      number:  0
+    }
+    value:  {
+      name:  "STATUS_ACTIVE"
+      number:  1
+    }
+    value:  {
+      name:  "STATUS_RUNNING"
+      number:  1
+      options:  {
+        deprecated:  true
+      }
+    }
+    options:  {
+      allow_alias:  true
+    }
+    reserved_range:  {
+      start:  2
+      end:  2
+    }
+    reserved_range:  {
+      start:  5
+      end:  9
+    }
+    reserved_range:  {
+      start:  -3
+      end:  -1
+    }
+    reserved_range:  {
+      start:  100
+      end:  2147483647
+    }
+    reserved_name:  "STATUS_OLD"
+    reserved_name:  "STATUS_GONE"
+  }
+  service:  {
+    name:  "Search"
+    method:  {
+      name:  "Find"
+      input_type:  ".test.proto2.Request"
+      output_type:  ".test.proto2.Response"
+    }
+    method:  {
+      name:  "Stream"
+      input_type:  ".test.proto2.Request"
+      output_type:  ".test.proto2.Response"
+      options:  {
+        idempotency_level:  NO_SIDE_EFFECTS
+      }
+      client_streaming:  true
+      server_streaming:  true
+    }
+    options:  {
+      deprecated:  true
+    }
+  }
+  extension:  {
+    name:  "extra"
+    number:  102
+    label:  LABEL_OPTIONAL
+    type:  TYPE_GROUP
+    type_name:  ".test.proto2.Extra"
+    extendee:  ".test.proto2.Request"
+    json_name:  "extra"
+  }
+  options:  {
+    java_package:  "com.example.proto2"
+    optimize_for:  SPEED
+    go_package:  "example.com/test/proto2;proto2\"\\"
+    cc_enable_arenas:  true
+  }
+}
+file:  {
+  name:  "editions2023.proto"
+  package:  "test.editions"
+  dependency:  "proto2.proto"
+  message_type:  {
+    name:  "Record"
+    field:  {
+      name:  "implicit"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      json_name:  "implicit"
+    }
+    field:  {
+      name:  "explicit"
+      number:  2
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      json_name:  "explicit"
+      options:  {
+        features:  {
+          field_presence:  EXPLICIT
+        }
+      }
+    }
+    field:  {
+      name:  "required_field"
+      number:  3
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      json_name:  "requiredField"
+      options:  {
+        features:  {
+          field_presence:  LEGACY_REQUIRED
+        }
+      }
+    }
+    field:  {
+      name:  "packed"
+      number:  4
+      label:  LABEL_REPEATED
+      type:  TYPE_INT32
+      json_name:  "packed"
+    }
+    field:  {
+      name:  "expanded"
+      number:  5
+      label:  LABEL_REPEATED
+      type:  TYPE_INT32
+      json_name:  "expanded"
+      options:  {
+        features:  {
+          repeated_field_encoding:  EXPANDED
+        }
+      }
+    }
+    field:  {
+      name:  "delimited"
+      number:  6
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.editions.Record.Child"
+      json_name:  "delimited"
+      options:  {
+        features:  {
+          message_encoding:  DELIMITED
+        }
+      }
+    }
+    field:  {
+      name:  "name"
+      number:  7
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      oneof_index:  0
+      json_name:  "name"
+    }
+    field:  {
+      name:  "code"
+      number:  8
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      oneof_index:  0
+      json_name:  "code"
+    }
+    field:  {
+      name:  "counts"
+      number:  10
+      label:  LABEL_REPEATED
+      type:  TYPE_MESSAGE
+      type_name:  ".test.editions.Record.CountsEntry"
+      json_name:  "counts"
+    }
+    field:  {
+      name:  "request"
+      number:  11
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.proto2.Request"
+      json_name:  "request"
+    }
+    field:  {
+      name:  "request_kind"
+      number:  12
+      label:  LABEL_OPTIONAL
+      type:  TYPE_ENUM
+      type_name:  ".test.proto2.Request.Kind"
+      json_name:  "requestKind"
+      options:  {
+        features:  {
+          field_presence:  EXPLICIT
+        }
+      }
+    }
+    field:  {
+      name:  "closed"
+      number:  13
+      label:  LABEL_OPTIONAL
+      type:  TYPE_ENUM
+      type_name:  ".test.editions.Closed"
+      json_name:  "closed"
+      options:  {
+        features:  {
+          field_presence:  EXPLICIT
+        }
+      }
+    }
+    field:  {
+      name:  "empty_features"
+      number:  14
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      json_name:  "emptyFeatures"
+      options:  {
+        features:  {}
+      }
+    }
+    nested_type:  {
+      name:  "Child"
+      field:  {
+        name:  "value"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_INT32
+        json_name:  "value"
+      }
+    }
+    nested_type:  {
+      name:  "CountsEntry"
+      field:  {
+        name:  "key"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_STRING
+        json_name:  "key"
+      }
+      field:  {
+        name:  "value"
+        number:  2
+        label:  LABEL_OPTIONAL
+        type:  TYPE_INT32
+        json_name:  "value"
+      }
+      options:  {
+        map_entry:  true
+      }
+    }
+    oneof_decl:  {
+      name:  "kind"
+    }
+    options:  {
+      features:  {
+        json_format:  LEGACY_BEST_EFFORT
+      }
+    }
+    reserved_range:  {
+      start:  9
+      end:  10
+    }
+    reserved_name:  "old_name"
+  }
+  enum_type:  {
+    name:  "Closed"
+    value:  {
+      name:  "CLOSED_ZERO"
+      number:  0
+    }
+    value:  {
+      name:  "CLOSED_ONE"
+      number:  1
+    }
+    options:  {
+      features:  {
+        enum_type:  CLOSED
+      }
+    }
+  }
+  extension:  {
+    name:  "editions_ext"
+    number:  150
+    label:  LABEL_OPTIONAL
+    type:  TYPE_INT32
+    extendee:  ".test.proto2.Request"
+    json_name:  "editionsExt"
+  }
+  options:  {
+    features:  {
+      field_presence:  IMPLICIT
+    }
+  }
+  syntax:  "editions"
+  edition:  EDITION_2023
+}
+file:  {
+  name:  "editions2024.proto"
+  package:  "test.editions2024"
+  message_type:  {
+    name:  "Item"
+    field:  {
+      name:  "id"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      json_name:  "id"
+    }
+    reserved_name:  "gone"
+  }
+  enum_type:  {
+    name:  "Shade"
+    value:  {
+      name:  "SHADE_UNSPECIFIED"
+      number:  0
+    }
+    reserved_name:  "SHADE_GONE"
+  }
+  syntax:  "editions"
+  edition:  EDITION_2024
+}
+file:  {
+  name:  "proto3_base.proto"
+  package:  "test.proto3"
+  message_type:  {
+    name:  "Base"
+    field:  {
+      name:  "created"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT64
+      json_name:  "created"
+    }
+  }
+  syntax:  "proto3"
+}
+file:  {
+  name:  "proto3.proto"
+  package:  "test.proto3"
+  dependency:  "common/types.proto"
+  dependency:  "proto3_base.proto"
+  public_dependency:  1
+  message_type:  {
+    name:  "Ping"
+    field:  {
+      name:  "implicit"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      json_name:  "implicit"
+    }
+    field:  {
+      name:  "explicit"
+      number:  2
+      label:  LABEL_OPTIONAL
+      type:  TYPE_INT32
+      oneof_index:  1
+      json_name:  "explicit"
+      proto3_optional:  true
+    }
+    field:  {
+      name:  "tags"
+      number:  3
+      label:  LABEL_REPEATED
+      type:  TYPE_STRING
+      json_name:  "tags"
+    }
+    field:  {
+      name:  "text"
+      number:  4
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      oneof_index:  0
+      json_name:  "text"
+    }
+    field:  {
+      name:  "data"
+      number:  6
+      label:  LABEL_OPTIONAL
+      type:  TYPE_BYTES
+      oneof_index:  0
+      json_name:  "data"
+    }
+    field:  {
+      name:  "values"
+      number:  7
+      label:  LABEL_REPEATED
+      type:  TYPE_MESSAGE
+      type_name:  ".test.proto3.Ping.ValuesEntry"
+      json_name:  "values"
+    }
+    field:  {
+      name:  "level"
+      number:  8
+      label:  LABEL_OPTIONAL
+      type:  TYPE_ENUM
+      type_name:  ".test.proto3.Level"
+      json_name:  "level"
+    }
+    field:  {
+      name:  "colour"
+      number:  9
+      label:  LABEL_OPTIONAL
+      type:  TYPE_ENUM
+      type_name:  ".test.common.Colour"
+      json_name:  "colour"
+    }
+    field:  {
+      name:  "base"
+      number:  10
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.proto3.Base"
+      json_name:  "base"
+    }
+    field:  {
+      name:  "snake_case"
+      number:  11
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      json_name:  "snake_case"
+    }
+    field:  {
+      name:  "custom"
+      number:  12
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      json_name:  "my\"Name"
+    }
+    nested_type:  {
+      name:  "Value"
+      field:  {
+        name:  "name"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_STRING
+        json_name:  "name"
+      }
+    }
+    nested_type:  {
+      name:  "ValuesEntry"
+      field:  {
+        name:  "key"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_STRING
+        json_name:  "key"
+      }
+      field:  {
+        name:  "value"
+        number:  2
+        label:  LABEL_OPTIONAL
+        type:  TYPE_MESSAGE
+        type_name:  ".test.proto3.Ping.Value"
+        json_name:  "value"
+      }
+      options:  {
+        map_entry:  true
+      }
+    }
+    oneof_decl:  {
+      name:  "payload"
+    }
+    oneof_decl:  {
+      name:  "_explicit"
+    }
+    reserved_range:  {
+      start:  5
+      end:  6
+    }
+    reserved_name:  "legacy"
+  }
+  message_type:  {
+    name:  "Pong"
+  }
+  enum_type:  {
+    name:  "Level"
+    value:  {
+      name:  "LEVEL_UNSPECIFIED"
+      number:  0
+    }
+    value:  {
+      name:  "LEVEL_HIGH"
+      number:  1
+    }
+  }
+  service:  {
+    name:  "Echo"
+    method:  {
+      name:  "Unary"
+      input_type:  ".test.proto3.Ping"
+      output_type:  ".test.proto3.Pong"
+    }
+    method:  {
+      name:  "ClientStream"
+      input_type:  ".test.proto3.Ping"
+      output_type:  ".test.proto3.Pong"
+      client_streaming:  true
+    }
+    method:  {
+      name:  "ServerStream"
+      input_type:  ".test.proto3.Ping"
+      output_type:  ".test.proto3.Pong"
+      server_streaming:  true
+    }
+    method:  {
+      name:  "Bidi"
+      input_type:  ".test.proto3.Ping"
+      output_type:  ".test.proto3.Pong"
+      client_streaming:  true
+      server_streaming:  true
+    }
+  }
+  service:  {
+    name:  "Empty"
+  }
+  options:  {
+    go_package:  "example.com/test/proto3"
+  }
+  syntax:  "proto3"
+}
+file:  {
+  name:  "shadow.proto"
+  package:  "test.shadow"
+  dependency:  "common/types.proto"
+  message_type:  {
+    name:  "T"
+  }
+  message_type:  {
+    name:  "U"
+  }
+  message_type:  {
+    name:  "V"
+  }
+  message_type:  {
+    name:  "W"
+  }
+  message_type:  {
+    name:  "M"
+    field:  {
+      name:  "shadowed"
+      number:  3
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.shadow.T"
+      json_name:  "shadowed"
+    }
+    field:  {
+      name:  "nested"
+      number:  4
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.shadow.M.T"
+      json_name:  "nested"
+    }
+    field:  {
+      name:  "shadowed_by_enum_value"
+      number:  5
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.shadow.V"
+      json_name:  "shadowedByEnumValue"
+    }
+    field:  {
+      name:  "other_package"
+      number:  6
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".test.common.Shared"
+      json_name:  "otherPackage"
+    }
+    nested_type:  {
+      name:  "T"
+    }
+    nested_type:  {
+      name:  "N"
+      field:  {
+        name:  "shadowed_by_parent"
+        number:  1
+        label:  LABEL_OPTIONAL
+        type:  TYPE_MESSAGE
+        type_name:  ".test.shadow.T"
+        json_name:  "shadowedByParent"
+      }
+      field:  {
+        name:  "plain"
+        number:  2
+        label:  LABEL_OPTIONAL
+        type:  TYPE_MESSAGE
+        type_name:  ".test.shadow.U"
+        json_name:  "plain"
+      }
+    }
+    enum_type:  {
+      name:  "E"
+      value:  {
+        name:  "V"
+        number:  0
+      }
+    }
+  }
+  service:  {
+    name:  "S"
+    method:  {
+      name:  "W"
+      input_type:  ".test.shadow.U"
+      output_type:  ".test.shadow.W"
+    }
+  }
+  syntax:  "proto3"
+}

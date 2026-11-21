@@ -1,0 +1,30 @@
+version: "2"
+
+linters:
+  # The standard set: errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - copyloopvar # loop variable copies made redundant by Go 1.22
+    - errorlint # error comparisons and type assertions that break wrapping
+    - gocritic # common bugs and style issues
+    - intrange # for loops that can range over an int
+    - misspell # misspelled words in comments and strings
+    - modernize # code that newer Go features simplify
+    - nolintlint # malformed or unused //nolint directives
+    - unconvert # unnecessary type conversions
+    - usestdlibvars # literals that have a standard library constant
+  settings:
+    misspell:
+      locale: UK
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/gbarr/protodump

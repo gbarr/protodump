@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package test.proto3;
+
+import "common/types.proto";
+import public "proto3_base.proto";
+
+option go_package = "example.com/test/proto3";
+
+service Echo {
+  rpc Unary (Ping) returns (Pong);
+  rpc ClientStream (stream Ping) returns (Pong);
+  rpc ServerStream (Ping) returns (stream Pong);
+  rpc Bidi (stream Ping) returns (stream Pong);
+}
+
+service Empty {
+}
+
+enum Level {
+  LEVEL_UNSPECIFIED = 0;
+  LEVEL_HIGH = 1;
+}
+
+message Ping {
+  reserved "legacy";
+  reserved 5;
+
+  message Value {
+    string name = 1;
+  }
+
+  int32 implicit = 1;
+  optional int32 explicit = 2;
+  repeated string tags = 3;
+
+  oneof payload {
+    string text = 4;
+    bytes data = 6;
+  }
+
+  map<string, Ping.Value> values = 7;
+  Level level = 8;
+  .test.common.Colour colour = 9;
+  Base base = 10;
+  string snake_case = 11 [json_name = "snake_case"];
+  string custom = 12 [json_name = "my\"Name"];
+}
+
+message Pong {
+}

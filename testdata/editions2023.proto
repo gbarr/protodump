@@ -1,0 +1,45 @@
+edition = "2023";
+
+package test.editions;
+
+import "proto2.proto";
+
+option features.field_presence = IMPLICIT;
+
+enum Closed {
+  option features.enum_type = CLOSED;
+  CLOSED_ZERO = 0;
+  CLOSED_ONE = 1;
+}
+
+message Record {
+  option features.json_format = LEGACY_BEST_EFFORT;
+  reserved old_name;
+  reserved 9;
+
+  message Child {
+    int32 value = 1;
+  }
+
+  int32 implicit = 1;
+  int32 explicit = 2 [features.field_presence = EXPLICIT];
+  int32 required_field = 3 [features.field_presence = LEGACY_REQUIRED];
+  repeated int32 packed = 4;
+  repeated int32 expanded = 5 [features.repeated_field_encoding = EXPANDED];
+  Record.Child delimited = 6 [features.message_encoding = DELIMITED];
+
+  oneof kind {
+    string name = 7;
+    int32 code = 8;
+  }
+
+  map<string, int32> counts = 10;
+  .test.proto2.Request request = 11;
+  .test.proto2.Request.Kind request_kind = 12 [features.field_presence = EXPLICIT];
+  Closed closed = 13 [features.field_presence = EXPLICIT];
+  int32 empty_features = 14 [features = {}];
+}
+
+extend .test.proto2.Request {
+  int32 editions_ext = 150;
+}

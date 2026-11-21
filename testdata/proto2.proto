@@ -1,0 +1,116 @@
+syntax = "proto2";
+
+package test.proto2;
+
+import "common/types.proto";
+
+option java_package = "com.example.proto2";
+option optimize_for = SPEED;
+option go_package = "example.com/test/proto2;proto2\"\\";
+option cc_enable_arenas = true;
+
+service Search {
+  option deprecated = true;
+  rpc Find (Request) returns (Response);
+
+  rpc Stream (stream Request) returns (stream Response) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+enum Status {
+  option allow_alias = true;
+  reserved "STATUS_OLD";
+  reserved "STATUS_GONE";
+  reserved 2;
+  reserved 5 to 9;
+  reserved -3 to -1;
+  reserved 100 to max;
+  STATUS_UNKNOWN = 0;
+  STATUS_ACTIVE = 1;
+  STATUS_RUNNING = 1 [deprecated = true];
+}
+
+message Request {
+  option no_standard_descriptor_accessor = true;
+  option deprecated = true;
+  reserved "old_field";
+  reserved 25;
+  reserved 30 to 39;
+  reserved 1000 to max;
+  extensions 100 to 199;
+
+  enum Kind {
+    KIND_A = 0;
+    KIND_B = 1;
+  }
+
+  message Inner {
+    optional int32 x = 1;
+  }
+
+  optional string query = 1 [default = "a\"b\tc\r\n"];
+  required int32 page = 2 [default = -7];
+  repeated int32 ids = 3 [packed = true];
+  optional bytes token = 4 [default = "\001\377x"];
+  optional double ratio = 5 [default = inf];
+  optional double low = 6 [default = -inf];
+  optional double undefined = 7 [default = nan];
+  optional float scale = 8 [default = 0.25];
+  optional double precise = 9 [default = 1.5];
+  optional Request.Kind kind = 10 [default = KIND_B];
+  optional int64 big = 11 [jstype = JS_STRING, deprecated = true];
+  optional string secret = 12 [debug_redact = true, targets = TARGET_TYPE_FIELD, targets = TARGET_TYPE_MESSAGE];
+  optional string renamed = 13 [json_name = "customName"];
+  optional Request.Inner inner = 14;
+  optional .test.common.Shared shared = 15;
+  optional Status status = 16;
+
+  oneof choice {
+    int32 number = 17;
+    string text = 18;
+  }
+
+  optional group Result = 19 {
+    optional string url = 1;
+  }
+
+  map<string, Request.Inner> by_name = 20;
+}
+
+message Response {
+  extend Request {
+    optional int32 rank = 100;
+  }
+
+  extend Request {
+    optional group Detail = 101 {
+      optional string note = 1;
+    }
+  }
+
+  message After {
+  }
+}
+
+extend Request {
+  optional group Extra = 102 {
+    optional int32 a = 1;
+  }
+}
+
+message Ordering {
+  message A {
+  }
+
+  optional group G = 1 {
+  }
+
+  message B {
+  }
+
+  map<string, int32> m = 2;
+
+  message C {
+  }
+}
