@@ -12,6 +12,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -450,18 +451,30 @@ func TestExtractDescriptorFields(t *testing.T) {
 		{"package after syntax", [][]byte{name, syntax}, [][]byte{pkg}},
 		{"name after edition", [][]byte{name, varint(14, 1000)}, [][]byte{str(1, "x.proto")}},
 
+		// Non-repeated fields that appear twice.
+		{"package twice", [][]byte{name, pkg}, [][]byte{str(2, "other"), syntax}},
+		{"syntax twice", [][]byte{name, syntax}, [][]byte{str(12, "proto2")}},
+		{"edition twice", [][]byte{name, syntax, varint(14, 1000)}, [][]byte{varint(14, 1001)}},
+
 		// Field numbers that FileDescriptorProto does not have.
 		{"field 13", [][]byte{name, syntax}, [][]byte{str(13, "x")}},
 		{"field 16", [][]byte{name, syntax}, [][]byte{str(16, "x")}},
 		{"field 1000", [][]byte{name, syntax}, [][]byte{varint(1000, 1)}},
 
 		// Known field numbers with the wrong wire type.
-		{"syntax as varint", [][]byte{name}, [][]byte{varint(12, 3)}},
-		{"package as fixed32", [][]byte{name}, [][]byte{fixed32(2, 1)}},
+		{"syntax as varint", [][]byte{name, pkg}, [][]byte{varint(12, 3)}},
+		{"package as fixed32", [][]byte{name, pkg}, [][]byte{fixed32(2, 1)}},
 		{"edition as fixed32", [][]byte{name, syntax}, [][]byte{fixed32(14, 1000)}},
 		{"edition packed", [][]byte{name, syntax}, [][]byte{packed(14, 1000)}},
-		{"public_dependency as fixed32", [][]byte{name}, [][]byte{fixed32(10, 0)}},
+		{"public_dependency as fixed32", [][]byte{name, pkg}, [][]byte{fixed32(10, 0)}},
 	}
+	// A name field alone is not taken as a descriptor.
+	for _, data := range [][]byte{name, slices.Concat(name, name), slices.Concat(name, name, syntax), slices.Concat(name, str(13, "x")), slices.Concat(name, varint(12, 3))} {
+		if got := extractDescriptor(data); len(got) != 0 {
+			t.Errorf("extractDescriptor(% x) = % x, want empty", data, got)
+		}
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			want := slices.Concat(tt.fields...)
@@ -500,5 +513,59 @@ func TestScanFileTrailingName(t *testing.T) {
 	}
 	if fd.Messages().ByName("A") == nil {
 		t.Errorf("a.proto has no message A")
+	}
+}
+
+// TestScanFileNameOnly checks that a filename field with nothing valid
+// after it, such as a ".proto" string in a binary's string data, is not
+// registered, and does not hide a descriptor that follows it.
+func TestScanFileNameOnly(t *testing.T) {
+	encoded, err := proto.Marshal(&descriptorpb.FileDescriptorProto{
+		Name:        new("a.proto"),
+		Syntax:      new("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{message("A", 1)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nameOnly := func(name string) []byte {
+		return protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), name)
+	}
+
+	tests := []struct {
+		desc string
+		data []byte
+		want []string
+	}{
+		{"name only", slices.Concat([]byte("filler"), nameOnly("x.proto"), []byte("/usr/lib")), nil},
+		{"name only at end", slices.Concat([]byte("filler"), nameOnly("x.proto")), nil},
+		{"name only, null terminated", slices.Concat([]byte("filler"), nameOnly("x.proto"), []byte{0}), nil},
+		{"name only before descriptor", slices.Concat([]byte("filler"), nameOnly("x.proto"), encoded, []byte{0}), []string{"a.proto"}},
+		{"same name before descriptor", slices.Concat([]byte("filler"), nameOnly("a.proto"), []byte("github.com/x"), encoded), []string{"a.proto"}},
+		{"name only after descriptor", slices.Concat([]byte("filler"), encoded, []byte{0}, nameOnly("x.proto"), []byte{0}), []string{"a.proto"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "binary")
+			if err := os.WriteFile(path, tt.data, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			s := New(nil)
+			if err := s.ScanFile(path); err != nil {
+				t.Fatalf("ScanFile error = %v, want nil", err)
+			}
+			var got []string
+			s.Files().RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+				got = append(got, fd.Path())
+				return true
+			})
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("registered %q, want %q", got, tt.want)
+			}
+			// The descriptor must be the real one, not a name-only stub.
+			if fd, err := s.Files().FindFileByPath("a.proto"); err == nil && fd.Messages().ByName("A") == nil {
+				t.Errorf("a.proto has no message A")
+			}
+		})
 	}
 }

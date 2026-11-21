@@ -146,6 +146,10 @@ func (s *Scanner) ScanFile(source string) error {
 		}
 
 		descriptor := extractDescriptor(data[start:])
+		if len(descriptor) == 0 {
+			offset = start + n
+			continue
+		}
 
 		if isFileSet {
 			if err := s.addFileDescriptorSet(descriptor); err != nil {
@@ -411,7 +415,9 @@ func validFileField(num protowire.Number, typ protowire.Type) bool {
 }
 
 // extractDescriptor returns the longest prefix of data made of fields that
-// can belong to a FileDescriptorProto, in field-number order.
+// can belong to a FileDescriptorProto, in field-number order. data must
+// start with the name field, as found by findDescriptor. The result is
+// nil if nothing valid follows the name.
 func extractDescriptor(data []byte) []byte {
 	position := 0
 	var last protowire.Number
@@ -423,8 +429,17 @@ func extractDescriptor(data []byte) []byte {
 		if length < 0 || num < last || !validFileField(num, typ) {
 			break
 		}
+		if num == last && !fileFields.ByNumber(num).IsList() {
+			break // a non-repeated field cannot appear twice
+		}
 		last = num
 		position += length
+	}
+	// A descriptor must have more than the name field. This also drops a
+	// genuine descriptor holding only a name, such as an empty proto2 file
+	// with no package, which is rare and has nothing to dump.
+	if last <= 1 {
+		return nil
 	}
 	return data[:position]
 }
