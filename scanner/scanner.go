@@ -129,11 +129,12 @@ func (s *Scanner) ScanFile(source string) error {
 }
 
 // ScanBytes scans data, such as the contents of a compiled binary, for
-// embedded file descriptors and file descriptor sets, and registers the
-// files it finds. Candidates that turn out not to be descriptors are
-// skipped silently. Descriptors that cannot be decoded or registered are
-// skipped too, and once all of data has been scanned they are reported
-// together as an Errors, each giving the descriptor's offset in data.
+// embedded file descriptors, and registers the files it finds. Each file
+// in an embedded FileDescriptorSet is found as a separate descriptor.
+// Candidates that turn out not to be descriptors are skipped silently.
+// Descriptors that cannot be decoded or registered are skipped too, and
+// once all of data has been scanned they are reported together as an
+// Errors, each giving the descriptor's offset in data.
 func (s *Scanner) ScanBytes(data []byte) error {
 	var errs Errors
 
@@ -151,36 +152,16 @@ func (s *Scanner) ScanBytes(data []byte) error {
 		_, _, n := protowire.ConsumeField(data[start:])
 		nameEnd := start + n
 
-		isFileSet := false
-		if start-offset > 2 {
-			st2 := bytes.LastIndexByte(data[offset:start-1], magicByte)
-			if st2 >= 20000 {
-				_, _, setN := protowire.ConsumeField(data[offset+st2:])
-				if setN > n {
-					start = offset + st2
-					isFileSet = true
-				}
-			}
-		}
-
 		descriptor := extractDescriptor(data[start:])
 		if len(descriptor) == 0 {
 			offset = nameEnd
 			continue
 		}
 
-		if isFileSet {
-			if err := s.addFileDescriptorSet(descriptor); err != nil {
-				errs = append(errs, fmt.Errorf("addFileDescriptorSet at %d: %w", start, err))
-				offset = nameEnd
-				continue
-			}
-		} else {
-			if err := s.addFileDescriptor(descriptor); err != nil {
-				errs = append(errs, fmt.Errorf("addFileDescriptor at %d: %w", start, err))
-				offset = nameEnd
-				continue
-			}
+		if err := s.addFileDescriptor(descriptor); err != nil {
+			errs = append(errs, fmt.Errorf("addFileDescriptor at %d: %w", start, err))
+			offset = nameEnd
+			continue
 		}
 
 		offset = start + len(descriptor)
@@ -267,22 +248,6 @@ func validName(name []byte) bool {
 		}
 	}
 	return true
-}
-
-func (s *Scanner) addFileDescriptorSet(encoded []byte) error {
-	set := new(descriptorpb.FileDescriptorSet)
-	if err := proto.Unmarshal(encoded, set); err != nil {
-		return fmt.Errorf("cannot unmarshal FileDescriptorSet: %w", err)
-	}
-
-	var errs []error
-	for _, file := range set.File {
-		if err := s.register(file); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return errors.Join(errs...)
 }
 
 func (s *Scanner) addFileDescriptor(encoded []byte) error {

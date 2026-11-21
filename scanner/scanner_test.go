@@ -11,8 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
@@ -703,5 +705,103 @@ func TestScanFileRejectedOverlap(t *testing.T) {
 	}
 	if _, err := s.Files().FindFileByPath("x.proto"); err == nil {
 		t.Errorf("x.proto registered, want it rejected")
+	}
+}
+
+// fileSet returns the FileDescriptorSet in testdata/descriptors.txtpb, as
+// compiled by protoc from the protodump testdata files.
+func fileSet(t *testing.T) *descriptorpb.FileDescriptorSet {
+	t.Helper()
+	text, err := os.ReadFile("../testdata/descriptors.txtpb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := new(descriptorpb.FileDescriptorSet)
+	if err := prototext.Unmarshal(text, set); err != nil {
+		t.Fatal(err)
+	}
+	return set
+}
+
+// TestScanBytesFileSet checks that every file in an encoded
+// FileDescriptorSet, such as protoc -o writes, is found and registered
+// unchanged. Each file in the set is encoded as field 1, which is lower
+// than the last field of the file before it, so extractDescriptor stops at
+// the start of the next one.
+func TestScanBytesFileSet(t *testing.T) {
+	testdata := fileSet(t)
+
+	// Files chosen to stress the boundaries between set entries: a name of
+	// length magicByte, a file with only a name and syntax, one too big for
+	// a single-byte length, descriptor.proto, which register skips, and a
+	// file whose dependencies are .proto strings that must not be taken as
+	// descriptors.
+	big := &descriptorpb.FileDescriptorProto{Name: new("dir/big.proto"), Package: new("big"), Syntax: new("proto3")}
+	for i := range 20 {
+		big.MessageType = append(big.MessageType, message("Message"+string(rune('A'+i)), 1, 2, 3))
+	}
+	synthetic := &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
+		{Name: new("user.proto"), Syntax: new("proto3"), MessageType: []*descriptorpb.DescriptorProto{message("User", 1)}},
+		{Name: new("small.proto"), Syntax: new("proto3")},
+		big,
+		protodesc.ToFileDescriptorProto(descriptorpb.File_google_protobuf_descriptor_proto),
+		{
+			Name:       new("uses.proto"),
+			Dependency: []string{"google/protobuf/descriptor.proto", "user.proto", "dir/big.proto"},
+			Syntax:     new("proto3"),
+		},
+	}}
+
+	encode := func(set *descriptorpb.FileDescriptorSet) []byte {
+		b, err := proto.Marshal(set)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	// want is every file in sets except descriptor.proto.
+	want := func(sets ...*descriptorpb.FileDescriptorSet) []*descriptorpb.FileDescriptorProto {
+		var files []*descriptorpb.FileDescriptorProto
+		for _, set := range sets {
+			for _, file := range set.File {
+				if file.GetName() != "google/protobuf/descriptor.proto" {
+					files = append(files, file)
+				}
+			}
+		}
+		return files
+	}
+
+	tests := []struct {
+		desc string
+		data []byte
+		want []*descriptorpb.FileDescriptorProto
+	}{
+		{"testdata", encode(testdata), want(testdata)},
+		{"synthetic", encode(synthetic), want(synthetic)},
+		{"embedded", slices.Concat([]byte("filler"), encode(testdata), []byte("github.com/x")), want(testdata)},
+		{"two sets", slices.Concat([]byte("filler"), encode(synthetic), []byte{0}, encode(testdata), []byte{0}), want(synthetic, testdata)},
+		{"back to back", slices.Concat(encode(synthetic), encode(testdata)), want(synthetic, testdata)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			s := New(nil)
+			if err := s.ScanBytes(tt.data); err != nil {
+				t.Fatalf("ScanBytes error = %v, want nil", err)
+			}
+			if got, want := s.Files().NumFiles(), len(tt.want); got != want {
+				t.Errorf("registered %d files, want %d", got, want)
+			}
+			for _, file := range tt.want {
+				fd, err := s.Files().FindFileByPath(file.GetName())
+				if err != nil {
+					t.Errorf("%s not registered: %v", file.GetName(), err)
+					continue
+				}
+				if got := protodesc.ToFileDescriptorProto(fd); !proto.Equal(got, file) {
+					t.Errorf("%s registered as\n%v\nwant\n%v", file.GetName(), got, file)
+				}
+			}
+		})
 	}
 }
