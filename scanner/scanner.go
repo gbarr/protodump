@@ -111,15 +111,30 @@ func (s *Scanner) ScanDir(dir string) error {
 	return errors.Join(scanErrors, err)
 }
 
-// ScanFile scans the file named source for embedded file descriptors and
-// file descriptor sets, and registers the files it finds. Descriptors that
-// cannot be decoded or registered are skipped, and reported together as an
-// Errors once the whole file has been scanned.
+// ScanFile reads the file named source and scans its contents with
+// ScanBytes. Each error in a returned Errors is prefixed with source.
+// An error reading the file is returned unchanged.
 func (s *Scanner) ScanFile(source string) error {
 	data, err := os.ReadFile(source)
 	if err != nil {
 		return err
 	}
+	err = s.ScanBytes(data)
+	if errs, ok := errors.AsType[Errors](err); ok {
+		for i, e := range errs {
+			errs[i] = fmt.Errorf("%s: %w", source, e)
+		}
+	}
+	return err
+}
+
+// ScanBytes scans data, such as the contents of a compiled binary, for
+// embedded file descriptors and file descriptor sets, and registers the
+// files it finds. Candidates that turn out not to be descriptors are
+// skipped silently. Descriptors that cannot be decoded or registered are
+// skipped too, and once all of data has been scanned they are reported
+// together as an Errors, each giving the descriptor's offset in data.
+func (s *Scanner) ScanBytes(data []byte) error {
 	var errs Errors
 
 	offset := 0
@@ -156,13 +171,13 @@ func (s *Scanner) ScanFile(source string) error {
 
 		if isFileSet {
 			if err := s.addFileDescriptorSet(descriptor); err != nil {
-				errs = append(errs, fmt.Errorf("addFileDescriptorSet %s:%d: %w", source, start, err))
+				errs = append(errs, fmt.Errorf("addFileDescriptorSet at %d: %w", start, err))
 				offset = nameEnd
 				continue
 			}
 		} else {
 			if err := s.addFileDescriptor(descriptor); err != nil {
-				errs = append(errs, fmt.Errorf("addFileDescriptor %s:%d: %w", source, start, err))
+				errs = append(errs, fmt.Errorf("addFileDescriptor at %d: %w", start, err))
 				offset = nameEnd
 				continue
 			}

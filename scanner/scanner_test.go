@@ -3,6 +3,7 @@ package scanner
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -90,20 +91,68 @@ func TestScanFile(t *testing.T) {
 
 	t.Run("descriptor errors", func(t *testing.T) {
 		s := New(nil)
-		err := s.ScanFile(writeDescriptors(t, bad, good))
+		path := writeDescriptors(t, bad, good)
+		err := s.ScanFile(path)
 
 		var errs Errors
 		if !errors.As(err, &errs) || len(errs) != 1 {
 			t.Fatalf("ScanFile error = %v, want Errors with 1 error", err)
 		}
-		if msg := errs[0].Error(); !strings.HasPrefix(msg, "addFileDescriptor ") || !strings.Contains(msg, `"Bad" has conflicting fields`) {
-			t.Errorf("error = %q, want an addFileDescriptor error for message Bad", msg)
+		// writeDescriptors puts bad first, after 6 bytes of filler.
+		prefix := path + ": addFileDescriptor at 6: "
+		if msg := errs[0].Error(); !strings.HasPrefix(msg, prefix) || !strings.Contains(msg, `"Bad" has conflicting fields`) {
+			t.Errorf("error = %q, want prefix %q and an error for message Bad", msg, prefix)
 		}
 		// The good descriptor after the bad one is still registered.
 		if _, err := s.Files().FindFileByPath("good.proto"); err != nil {
 			t.Errorf("good.proto not registered: %v", err)
 		}
 	})
+
+	t.Run("read error", func(t *testing.T) {
+		err := New(nil).ScanFile(filepath.Join(t.TempDir(), "missing"))
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("ScanFile error = %v, want os.ErrNotExist", err)
+		}
+		if _, ok := errors.AsType[Errors](err); ok {
+			t.Errorf("ScanFile error = %v, want a read error, not Errors", err)
+		}
+	})
+}
+
+// TestScanBytesErrors checks that ScanBytes reports a descriptor's offset in
+// data, without the source path that ScanFile adds.
+func TestScanBytesErrors(t *testing.T) {
+	encode := func(file *descriptorpb.FileDescriptorProto) []byte {
+		b, err := proto.Marshal(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	bad := encode(&descriptorpb.FileDescriptorProto{
+		Name:        new("bad.proto"),
+		Syntax:      new("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{message("Bad", 1, 1)},
+	})
+	good := encode(&descriptorpb.FileDescriptorProto{Name: new("good.proto"), Syntax: new("proto3")})
+	data := slices.Concat(good, []byte{0}, []byte("filler"), bad, []byte{0})
+
+	s := New(nil)
+	errs, ok := errors.AsType[Errors](s.ScanBytes(data))
+	if !ok || len(errs) != 1 {
+		t.Fatalf("ScanBytes error = %v, want Errors with 1 error", errs)
+	}
+	prefix := fmt.Sprintf("addFileDescriptor at %d: ", len(good)+1+len("filler"))
+	if msg := errs[0].Error(); !strings.HasPrefix(msg, prefix) {
+		t.Errorf("error = %q, want prefix %q", msg, prefix)
+	}
+	if _, err := s.Files().FindFileByPath("good.proto"); err != nil {
+		t.Errorf("good.proto not registered: %v", err)
+	}
+	if err := New(nil).ScanBytes(good); err != nil {
+		t.Errorf("ScanBytes(good) error = %v, want nil", err)
+	}
 }
 
 // TestScanFileNameLengths covers file names around 10 bytes, the value of the
