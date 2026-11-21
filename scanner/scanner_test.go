@@ -615,3 +615,44 @@ func TestFindDescriptorNames(t *testing.T) {
 		t.Errorf("findDescriptor(% x) = %d, want %d", data, got, want)
 	}
 }
+
+// TestScanFileRejectedOverlap checks that when a candidate fails to decode,
+// the search resumes just after its name, so that a descriptor inside the
+// bytes the candidate covered is still found.
+func TestScanFileRejectedOverlap(t *testing.T) {
+	encoded, err := proto.Marshal(&descriptorpb.FileDescriptorProto{
+		Name:        new("a.proto"),
+		Syntax:      new("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{message("A", 1)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A candidate x.proto whose message_type field (4) covers the real
+	// descriptor. The field's contents start with an invalid wire type, so
+	// the candidate fails to unmarshal.
+	candidate := protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), "x.proto")
+	candidate = protowire.AppendTag(candidate, 4, protowire.BytesType)
+	candidate = protowire.AppendBytes(candidate, slices.Concat([]byte{0x07}, encoded, []byte{0}))
+	path := filepath.Join(t.TempDir(), "binary")
+	if err := os.WriteFile(path, slices.Concat([]byte("filler"), candidate, []byte{0}), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(nil)
+	err = s.ScanFile(path)
+	errs, ok := errors.AsType[Errors](err)
+	if !ok || len(errs) != 1 || !strings.Contains(errs[0].Error(), "cannot unmarshal") {
+		t.Fatalf("ScanFile error = %v, want Errors with 1 unmarshal error", err)
+	}
+	fd, err := s.Files().FindFileByPath("a.proto")
+	if err != nil {
+		t.Fatalf("a.proto not registered: %v", err)
+	}
+	if fd.Messages().ByName("A") == nil {
+		t.Errorf("a.proto has no message A")
+	}
+	if _, err := s.Files().FindFileByPath("x.proto"); err == nil {
+		t.Errorf("x.proto registered, want it rejected")
+	}
+}

@@ -131,7 +131,10 @@ func (s *Scanner) ScanFile(source string) error {
 		start += offset
 
 		// n is the length of the filename field, which ends with protoExtn.
+		// A rejected candidate resumes the search at nameEnd, so that a
+		// descriptor overlapping it is still found.
 		_, _, n := protowire.ConsumeField(data[start:])
+		nameEnd := start + n
 
 		isFileSet := false
 		if start-offset > 2 {
@@ -147,17 +150,21 @@ func (s *Scanner) ScanFile(source string) error {
 
 		descriptor := extractDescriptor(data[start:])
 		if len(descriptor) == 0 {
-			offset = start + n
+			offset = nameEnd
 			continue
 		}
 
 		if isFileSet {
 			if err := s.addFileDescriptorSet(descriptor); err != nil {
 				errs = append(errs, fmt.Errorf("addFileDescriptorSet %s:%d: %w", source, start, err))
+				offset = nameEnd
+				continue
 			}
 		} else {
 			if err := s.addFileDescriptor(descriptor); err != nil {
 				errs = append(errs, fmt.Errorf("addFileDescriptor %s:%d: %w", source, start, err))
+				offset = nameEnd
+				continue
 			}
 		}
 
