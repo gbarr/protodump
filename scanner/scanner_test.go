@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
@@ -316,5 +317,188 @@ func TestFindDescriptor(t *testing.T) {
 				t.Errorf("findDescriptor(% x) = %d, want %d", data, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExtractDescriptor(t *testing.T) {
+	encoded, err := proto.Marshal(&descriptorpb.FileDescriptorProto{
+		Name:        new("a.proto"),
+		Syntax:      new("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{message("A", 1, 2)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		desc   string
+		suffix []byte
+		want   []byte
+	}{
+		{"end of data", nil, encoded},
+		{"null terminated", []byte{0, 'x'}, encoded},
+		// 'g' (0x67) is wire type 7, which is invalid, as is '/' (0x2f).
+		{"followed by string", []byte("github.com/x/y"), encoded},
+		{"followed by path", []byte("/usr/lib"), encoded},
+		{"followed by varint tag 0", []byte{0x80, 0x00}, encoded},
+		{"followed by truncated varint", []byte{0x08, 0x80}, encoded},
+		{"followed by truncated bytes field", []byte{0x12, 0x20, 'a', 'b'}, encoded},
+		{"followed by length past end of data", []byte{0x12, 0xff, 0xff, 0x03}, encoded},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			data := slices.Concat(encoded, tt.suffix)
+			if got := extractDescriptor(data); !bytes.Equal(got, tt.want) {
+				t.Errorf("extractDescriptor(% x) = % x, want % x", data, got, tt.want)
+			}
+		})
+	}
+
+	for _, data := range [][]byte{nil, {}, {0}, []byte("github"), {0x12, 0x05, 'a'}} {
+		if got := extractDescriptor(data); len(got) != 0 {
+			t.Errorf("extractDescriptor(% x) = % x, want empty", data, got)
+		}
+	}
+}
+
+// TestScanFileUnterminated checks that descriptors not followed by a null
+// byte, such as Go rawDesc strings packed among other string data, are
+// still found.
+func TestScanFileUnterminated(t *testing.T) {
+	files := []*descriptorpb.FileDescriptorProto{
+		{Name: new("a.proto"), Syntax: new("proto3"), MessageType: []*descriptorpb.DescriptorProto{message("A", 1)}},
+		{Name: new("b.proto"), Syntax: new("proto3"), MessageType: []*descriptorpb.DescriptorProto{message("B", 1, 2)}},
+	}
+	encode := func(i int) []byte {
+		encoded, err := proto.Marshal(files[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+
+	tests := []struct {
+		desc string
+		data []byte
+	}{
+		{"followed by string", slices.Concat([]byte("filler"), encode(0), []byte("github.com/x"), encode(1), []byte("/usr/lib"))},
+		{"back to back with end of data", slices.Concat([]byte("filler"), encode(0), []byte("github.com/x"), encode(1))},
+		{"followed by truncated field", slices.Concat([]byte("filler"), encode(0), []byte{0x12, 0x7f, 'x'}, encode(1), []byte{0x08})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "binary")
+			if err := os.WriteFile(path, tt.data, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			s := New(nil)
+			if err := s.ScanFile(path); err != nil {
+				t.Fatalf("ScanFile error = %v, want nil", err)
+			}
+			for _, file := range files {
+				fd, err := s.Files().FindFileByPath(file.GetName())
+				if err != nil {
+					t.Errorf("%s not registered: %v", file.GetName(), err)
+					continue
+				}
+				if got, want := fd.Messages().Get(0).Fields().Len(), len(file.MessageType[0].Field); got != want {
+					t.Errorf("%s has %d fields, want %d", file.GetName(), got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestExtractDescriptorFields checks that extractDescriptor stops at the
+// first field that cannot belong to a FileDescriptorProto: an unknown field
+// number, the wrong wire type, or a field number lower than the one before.
+func TestExtractDescriptorFields(t *testing.T) {
+	str := func(num protowire.Number, s string) []byte {
+		return protowire.AppendString(protowire.AppendTag(nil, num, protowire.BytesType), s)
+	}
+	varint := func(num protowire.Number, v uint64) []byte {
+		return protowire.AppendVarint(protowire.AppendTag(nil, num, protowire.VarintType), v)
+	}
+	packed := func(num protowire.Number, vs ...uint64) []byte {
+		var b []byte
+		for _, v := range vs {
+			b = protowire.AppendVarint(b, v)
+		}
+		return protowire.AppendBytes(protowire.AppendTag(nil, num, protowire.BytesType), b)
+	}
+	fixed32 := func(num protowire.Number, v uint32) []byte {
+		return protowire.AppendFixed32(protowire.AppendTag(nil, num, protowire.Fixed32Type), v)
+	}
+
+	name := str(1, "a.proto")
+	pkg := str(2, "pkg")
+	syntax := str(12, "proto3")
+
+	tests := []struct {
+		desc   string
+		fields [][]byte // the descriptor's fields
+		extra  [][]byte // trailing bytes that must not be included
+	}{
+		{"all valid", [][]byte{name, pkg, str(3, "b.proto"), str(3, "c.proto"), varint(10, 0), varint(11, 1), syntax, varint(14, 1000)}, nil},
+		{"repeated field", [][]byte{name, str(3, "b.proto"), str(3, "c.proto"), str(3, "d.proto")}, nil},
+		{"packed public_dependency", [][]byte{name, str(3, "b.proto"), str(3, "c.proto"), packed(10, 0, 1)}, nil},
+		{"packed weak_dependency", [][]byte{name, str(3, "b.proto"), packed(11, 0)}, nil},
+
+		// Field numbers going backwards, which protoc never writes.
+		{"name after syntax", [][]byte{name, syntax}, [][]byte{str(1, "x.proto")}},
+		{"name after package", [][]byte{name, pkg}, [][]byte{str(1, "x.proto"), syntax}},
+		{"package after syntax", [][]byte{name, syntax}, [][]byte{pkg}},
+		{"name after edition", [][]byte{name, varint(14, 1000)}, [][]byte{str(1, "x.proto")}},
+
+		// Field numbers that FileDescriptorProto does not have.
+		{"field 13", [][]byte{name, syntax}, [][]byte{str(13, "x")}},
+		{"field 16", [][]byte{name, syntax}, [][]byte{str(16, "x")}},
+		{"field 1000", [][]byte{name, syntax}, [][]byte{varint(1000, 1)}},
+
+		// Known field numbers with the wrong wire type.
+		{"syntax as varint", [][]byte{name}, [][]byte{varint(12, 3)}},
+		{"package as fixed32", [][]byte{name}, [][]byte{fixed32(2, 1)}},
+		{"edition as fixed32", [][]byte{name, syntax}, [][]byte{fixed32(14, 1000)}},
+		{"edition packed", [][]byte{name, syntax}, [][]byte{packed(14, 1000)}},
+		{"public_dependency as fixed32", [][]byte{name}, [][]byte{fixed32(10, 0)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			want := slices.Concat(tt.fields...)
+			data := slices.Concat(want, slices.Concat(tt.extra...))
+			if got := extractDescriptor(data); !bytes.Equal(got, want) {
+				t.Errorf("extractDescriptor(% x)\n = % x\nwant % x", data, got, want)
+			}
+		})
+	}
+}
+
+// TestScanFileTrailingName checks that a name field straight after a
+// descriptor does not replace the descriptor's own name.
+func TestScanFileTrailingName(t *testing.T) {
+	encoded, err := proto.Marshal(&descriptorpb.FileDescriptorProto{
+		Name:        new("a.proto"),
+		Syntax:      new("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{message("A", 1)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trailing := protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), "x.proto")
+	path := filepath.Join(t.TempDir(), "binary")
+	if err := os.WriteFile(path, slices.Concat([]byte("filler"), encoded, trailing, []byte("/usr/lib")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(nil)
+	if err := s.ScanFile(path); err != nil {
+		t.Fatalf("ScanFile error = %v, want nil", err)
+	}
+	fd, err := s.Files().FindFileByPath("a.proto")
+	if err != nil {
+		t.Fatalf("a.proto not registered: %v", err)
+	}
+	if fd.Messages().ByName("A") == nil {
+		t.Errorf("a.proto has no message A")
 	}
 }

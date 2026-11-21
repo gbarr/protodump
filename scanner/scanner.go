@@ -132,7 +132,6 @@ func (s *Scanner) ScanFile(source string) error {
 
 		// n is the length of the filename field, which ends with protoExtn.
 		_, _, n := protowire.ConsumeField(data[start:])
-		index := start + n - len(protoExtn)
 
 		isFileSet := false
 		if start-offset > 2 {
@@ -146,11 +145,7 @@ func (s *Scanner) ScanFile(source string) error {
 			}
 		}
 
-		descriptor, err := extractDescriptor(data[start:])
-		if err != nil {
-			offset = index + 1
-			continue
-		}
+		descriptor := extractDescriptor(data[start:])
 
 		if isFileSet {
 			if err := s.addFileDescriptorSet(descriptor); err != nil {
@@ -199,7 +194,7 @@ func findDescriptor(data []byte) int {
 
 		start := bytes.LastIndexByte(data[offset:index], magicByte)
 		if start == -1 {
-			offset = index + 1
+			offset = index + 1 // skip past found protoExtn
 			continue
 		}
 		start += offset
@@ -389,35 +384,47 @@ func writeFile(root *os.Root, filename string, data []byte) error {
 	return nil
 }
 
-func extractDescriptor(data []byte) ([]byte, error) {
-	position := 0
-	for {
-		_, _, length := protowire.ConsumeField(data[position:])
+var fileFields = (*descriptorpb.FileDescriptorProto)(nil).ProtoReflect().Descriptor().Fields()
 
-		// descriptors are terminated by a null tag, which is an error from ConsumeField
-		if length < 0 {
-			v, n := protowire.ConsumeVarint(data[position:])
-			if n < 0 {
-				return nil, protowire.ParseError(n)
-			}
-
-			// found the null tag
-			if v == 0 {
-				return data[:position], nil
-			}
-
-			return nil, protowire.ParseError(length)
-		}
-
-		position += length
-
-		if position == len(data) {
-			return data, nil
-		}
-
-		// Don't read beyond data bounds
-		if position > len(data) {
-			return nil, io.ErrUnexpectedEOF
-		}
+// validFileField reports whether a field with number num and wire type typ can
+// be part of a FileDescriptorProto.
+func validFileField(num protowire.Number, typ protowire.Type) bool {
+	fd := fileFields.ByNumber(num)
+	if fd == nil {
+		return false
 	}
+	var want protowire.Type
+	switch fd.Kind() {
+	case protoreflect.StringKind, protoreflect.BytesKind, protoreflect.MessageKind:
+		return typ == protowire.BytesType
+	case protoreflect.GroupKind:
+		return typ == protowire.StartGroupType
+	case protoreflect.Fixed32Kind, protoreflect.Sfixed32Kind, protoreflect.FloatKind:
+		want = protowire.Fixed32Type
+	case protoreflect.Fixed64Kind, protoreflect.Sfixed64Kind, protoreflect.DoubleKind:
+		want = protowire.Fixed64Type
+	default: // bool, enum, int32/64, uint32/64, sint32/64
+		want = protowire.VarintType
+	}
+	// A repeated scalar field may also be packed into one BytesType field.
+	return typ == want || (fd.IsList() && typ == protowire.BytesType)
+}
+
+// extractDescriptor returns the longest prefix of data made of fields that
+// can belong to a FileDescriptorProto, in field-number order.
+func extractDescriptor(data []byte) []byte {
+	position := 0
+	var last protowire.Number
+	for {
+		// This depends on the fact that protoc, or the plugin used,
+		// outputs fields in order of field number. A number can repeat
+		// but not go backwards.
+		num, typ, length := protowire.ConsumeField(data[position:])
+		if length < 0 || num < last || !validFileField(num, typ) {
+			break
+		}
+		last = num
+		position += length
+	}
+	return data[:position]
 }
