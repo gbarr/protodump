@@ -28,14 +28,18 @@ func main() {
 		log.Print(err)
 	}
 
-	found := s.Files().NumFiles()
-	if found == 0 {
+	if s.Files().NumFiles() == 0 {
 		log.Fatal("no descriptors found")
 	}
 
-	if err := s.WriteFiles(*output); err != nil {
+	written, err := s.WriteFiles(*output)
+	if err != nil {
 		log.Fatal(err)
 	}
+	if written == 0 {
+		// Only files that are never written, such as descriptor.proto.
+		log.Fatal("no descriptors to write")
+	}
 
-	fmt.Printf("wrote %d descriptors to %s\n", found, *output)
+	fmt.Printf("wrote %d descriptors to %s\n", written, *output)
 }

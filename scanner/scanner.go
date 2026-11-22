@@ -376,32 +376,32 @@ func (s *Scanner) Dump(w io.Writer) error {
 }
 
 // WriteFiles writes .proto source for every registered file except
-// google/protobuf/descriptor.proto to dir, which is created if needed.
-// File names that would leave dir are rejected. Filesthat cannot be
-// written are skipped; if any are, it returns an Errors with
-// an error for each.
-func (s *Scanner) WriteFiles(dir string) error {
+// google/protobuf/descriptor.proto to dir, which is created if needed, and
+// returns how many files it wrote. File names that would leave dir are
+// rejected. Files that cannot be dumped or written are skipped; if any are,
+// it returns an Errors with an error for each, along with the count of
+// those that were written.
+func (s *Scanner) WriteFiles(dir string) (int, error) {
 	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return fmt.Errorf("cannot get absolute dir for %s: %w", dir, err)
+		return 0, fmt.Errorf("cannot get absolute dir for %s: %w", dir, err)
 	}
 	// File names come from descriptors found in the scanned files, so write
 	// through an os.Root to keep them inside the output directory.
 	root, err := os.OpenRoot(absDir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() { _ = root.Close() }() // a directory handle; nothing to flush
 
 	var errs Errors
-	written, skipped := 0, 0
+	written := 0
 	s.files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		if fd.Path() == descriptorProto {
-			skipped++
 			return true
 		}
 		pd := protodesc.ToFileDescriptorProto(fd)
@@ -421,12 +421,9 @@ func (s *Scanner) WriteFiles(dir string) error {
 	})
 
 	if len(errs) > 0 {
-		return errs
+		return written, errs
 	}
-	if total := s.files.NumFiles() - skipped; total != written {
-		return fmt.Errorf("failed to write all files (wrote %d of %d)", written, total)
-	}
-	return nil
+	return written, nil
 }
 
 // writeFile writes data to filename, a slash-separated path, within root,

@@ -186,8 +186,8 @@ func TestWriteFiles(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "out")
-	if err := s.WriteFiles(out); err != nil {
-		t.Fatalf("WriteFiles: %v", err)
+	if n, err := s.WriteFiles(out); err != nil || n != len(files) {
+		t.Fatalf("WriteFiles = %d, %v, want %d, nil", n, err, len(files))
 	}
 	got, err := os.ReadFile(filepath.Join(out, "top.proto"))
 	if err != nil {
@@ -214,7 +214,10 @@ func TestWriteFilesStaysInDir(t *testing.T) {
 	}
 
 	base := t.TempDir()
-	err = s.WriteFiles(filepath.Join(base, "out"))
+	n, err := s.WriteFiles(filepath.Join(base, "out"))
+	if n != 0 {
+		t.Errorf("WriteFiles wrote %d files, want 0", n)
+	}
 	errs, ok := errors.AsType[Errors](err)
 	if !ok || len(errs) != 1 {
 		t.Fatalf("WriteFiles error = %v, want Errors with 1 error", err)
@@ -1045,8 +1048,8 @@ func TestDescriptorProto(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "out")
-	if err := s.WriteFiles(out); err != nil {
-		t.Fatalf("WriteFiles error = %v, want nil", err)
+	if n, err := s.WriteFiles(out); err != nil || n != 1 {
+		t.Fatalf("WriteFiles = %d, %v, want 1, nil", n, err)
 	}
 	if _, err := os.Stat(filepath.Join(out, "opts.proto")); err != nil {
 		t.Errorf("opts.proto not written: %v", err)
@@ -1076,8 +1079,8 @@ func TestDescriptorProtoOnly(t *testing.T) {
 		t.Errorf("Dump = %q, %v, want no output and nil", buf.String(), err)
 	}
 	out := filepath.Join(t.TempDir(), "out")
-	if err := s.WriteFiles(out); err != nil {
-		t.Errorf("WriteFiles error = %v, want nil", err)
+	if n, err := s.WriteFiles(out); err != nil || n != 0 {
+		t.Errorf("WriteFiles = %d, %v, want 0, nil", n, err)
 	}
 	if entries, err := os.ReadDir(out); err != nil || len(entries) != 0 {
 		t.Errorf("WriteFiles wrote %v (err %v), want nothing", entries, err)

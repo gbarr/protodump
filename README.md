@@ -47,7 +47,8 @@ if err := s.Dump(os.Stdout); err != nil {
 }
 ```
 
-`s.WriteFiles(dir)` writes each file to its own path under `dir` instead.
+`s.WriteFiles(dir)` writes each file to its own path under `dir` instead, and
+returns how many files it wrote.
 
 ## What is supported
 
