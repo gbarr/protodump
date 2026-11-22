@@ -1,0 +1,121 @@
+// api/api.proto
+syntax = "proto3";
+
+package rebuild.api;
+
+import "common/public.proto";
+import "google/protobuf/descriptor.proto";
+import "options/options.proto";
+
+option (rebuild.options.owner) = "api";
+
+service Accounts {
+  option (rebuild.options.route) = "/accounts";
+
+  rpc List (ListAccountsRequest) returns (ListAccountsResponse) {
+    option (rebuild.options.timeout_ms) = 500;
+  }
+}
+
+message Account {
+  option (rebuild.options.doc).summary = "A customer account";
+  string id = 1;
+  .rebuild.common.Money balance = 2;
+  .rebuild.common.Status status = 3;
+  string email = 4 [(rebuild.options.level) = LEVEL_LOW, (rebuild.options.sensitive) = true];
+  map<string, .rebuild.common.Money> holdings = 5;
+}
+
+message ListAccountsRequest {
+  option (rebuild.api.internal) = true;
+  .rebuild.common.Page page = 1;
+}
+
+message ListAccountsResponse {
+  repeated Account accounts = 1;
+  .rebuild.common.Page next = 2;
+}
+
+extend .google.protobuf.MessageOptions {
+  bool internal = 50100;
+}
+
+// common/public.proto
+syntax = "proto3";
+
+package rebuild.common;
+
+import public "common/types.proto";
+
+message Page {
+  int32 size = 1;
+  string token = 2;
+}
+
+// common/types.proto
+syntax = "proto3";
+
+package rebuild.common;
+
+import "options/options.proto";
+
+option (rebuild.options.owner) = "common";
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_ACTIVE = 1 [(rebuild.options.label) = "Active"];
+  STATUS_CLOSED = 2 [(rebuild.options.label) = "Closed"];
+}
+
+message Money {
+  option (rebuild.options.doc).summary = "An amount of money";
+  option (rebuild.options.doc).tags = "finance";
+  string currency = 1;
+  int64 units = 2 [(rebuild.options.level) = LEVEL_HIGH];
+}
+
+// options/options.proto
+syntax = "proto3";
+
+package rebuild.options;
+
+import "google/protobuf/descriptor.proto";
+
+enum Level {
+  LEVEL_UNSPECIFIED = 0;
+  LEVEL_LOW = 1;
+  LEVEL_HIGH = 2;
+}
+
+message Doc {
+  string summary = 1;
+  repeated string tags = 2;
+}
+
+extend .google.protobuf.FileOptions {
+  string owner = 50000;
+}
+
+extend .google.protobuf.MessageOptions {
+  Doc doc = 50001;
+}
+
+extend .google.protobuf.FieldOptions {
+  Level level = 50002;
+}
+
+extend .google.protobuf.FieldOptions {
+  bool sensitive = 50003;
+}
+
+extend .google.protobuf.EnumValueOptions {
+  string label = 50004;
+}
+
+extend .google.protobuf.ServiceOptions {
+  string route = 50005;
+}
+
+extend .google.protobuf.MethodOptions {
+  int32 timeout_ms = 50006;
+}

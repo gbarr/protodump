@@ -317,7 +317,7 @@ func (s *Scanner) register(proto *descriptorpb.FileDescriptorProto) error {
 	}
 
 	fileOptions := protodesc.FileOptions{AllowUnresolvable: true}
-	descriptor, err := fileOptions.New(proto, s.files)
+	descriptor, err := fileOptions.New(proto, newImportResolver(s.files, proto))
 	if err != nil {
 		return fmt.Errorf("create FileDescriptor: %w", err)
 	}
@@ -328,14 +328,77 @@ func (s *Scanner) register(proto *descriptorpb.FileDescriptorProto) error {
 	return nil
 }
 
+// importResolver resolves names for one file being built, finding only
+// descriptors in the files it can see: those it imports, and those they
+// publicly import in turn.
+//
+// protodesc fails a file whose reference resolves to a type in a file it
+// does not import, even with AllowUnresolvable. That happens when a file is
+// found before one it imports that publicly imports the type's file: the
+// type is registered, but the file that makes it visible is not. Hiding the
+// type instead leaves the reference unresolved, as a placeholder, which
+// rebuild resolves once every file is registered.
+type importResolver struct {
+	files   *protoregistry.Files
+	visible map[string]bool
+}
+
+// newImportResolver returns an importResolver for pb, a file about to be
+// built against files.
+func newImportResolver(files *protoregistry.Files, pb *descriptorpb.FileDescriptorProto) *importResolver {
+	r := &importResolver{files: files, visible: make(map[string]bool)}
+	for _, path := range pb.GetDependency() {
+		r.addVisible(path)
+	}
+	return r
+}
+
+// addVisible marks path as visible, along with the files it publicly
+// imports, if it has been registered.
+func (r *importResolver) addVisible(path string) {
+	if r.visible[path] {
+		return
+	}
+	r.visible[path] = true
+	fd, err := r.files.FindFileByPath(path)
+	if err != nil {
+		return // not registered yet, so its public imports are not known
+	}
+	imports := fd.Imports()
+	for i := range imports.Len() {
+		if imp := imports.Get(i); imp.IsPublic {
+			r.addVisible(imp.Path())
+		}
+	}
+}
+
+func (r *importResolver) FindFileByPath(path string) (protoreflect.FileDescriptor, error) {
+	return r.files.FindFileByPath(path)
+}
+
+func (r *importResolver) FindDescriptorByName(name protoreflect.FullName) (protoreflect.Descriptor, error) {
+	d, err := r.files.FindDescriptorByName(name)
+	if err != nil {
+		return nil, err
+	}
+	if !r.visible[d.ParentFile().Path()] {
+		return nil, protoregistry.NotFound
+	}
+	return d, nil
+}
+
 // Dump writes .proto source for every registered file except
 // google/protobuf/descriptor.proto to w, in order of file path, each
-// preceded by a comment line giving its path. Files that
-// cannot be dumped are skipped; if any are, it returns an Errors with an
-// error for each. An error writing to w is returned immediately.
+// preceded by a comment line giving its path. The files are first rebuilt
+// in import order, so that references between them and their custom options
+// resolve whatever order they were found in. Files that cannot be rebuilt or
+// dumped are skipped; if any are, it returns an Errors with an error for
+// each. An error writing to w is returned immediately.
 func (s *Scanner) Dump(w io.Writer) error {
+	registry, errs := rebuild(s.files)
+
 	var files []protoreflect.FileDescriptor
-	s.files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+	registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		if fd.Path() != descriptorProto {
 			files = append(files, fd)
 		}
@@ -345,13 +408,12 @@ func (s *Scanner) Dump(w io.Writer) error {
 		return strings.Compare(a.Path(), b.Path())
 	})
 
-	var errs Errors
 	var buf bytes.Buffer
 	written := 0
 	for _, fd := range files {
 		// Dump into buf first so a file that fails leaves no partial output.
 		buf.Reset()
-		if err := protodump.Dump(&buf, protodesc.ToFileDescriptorProto(fd), s.files); err != nil {
+		if err := protodump.Dump(&buf, protodesc.ToFileDescriptorProto(fd), registry); err != nil {
 			errs = append(errs, fmt.Errorf("dump failed %s: %w", fd.Path(), err))
 			continue
 		}
@@ -377,10 +439,11 @@ func (s *Scanner) Dump(w io.Writer) error {
 
 // WriteFiles writes .proto source for every registered file except
 // google/protobuf/descriptor.proto to dir, which is created if needed, and
-// returns how many files it wrote. File names that would leave dir are
-// rejected. Files that cannot be dumped or written are skipped; if any are,
-// it returns an Errors with an error for each, along with the count of
-// those that were written.
+// returns how many files it wrote. As with Dump, the files are first rebuilt
+// in import order. File names that would leave dir are rejected. Files that
+// cannot be rebuilt, dumped or written are skipped; if any are, it returns
+// an Errors with an error for each, along with the count of those that were
+// written.
 func (s *Scanner) WriteFiles(dir string) (int, error) {
 	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
@@ -398,16 +461,16 @@ func (s *Scanner) WriteFiles(dir string) (int, error) {
 	}
 	defer func() { _ = root.Close() }() // a directory handle; nothing to flush
 
-	var errs Errors
+	registry, errs := rebuild(s.files)
 	written := 0
-	s.files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+	registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		if fd.Path() == descriptorProto {
 			return true
 		}
 		pd := protodesc.ToFileDescriptorProto(fd)
 		var buf bytes.Buffer
 		name := pd.GetName()
-		if err := protodump.Dump(&buf, pd, s.files); err != nil {
+		if err := protodump.Dump(&buf, pd, registry); err != nil {
 			errs = append(errs, fmt.Errorf("dump failed %s: %w", name, err))
 			return true
 		}

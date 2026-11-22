@@ -1,0 +1,54 @@
+name:  "common/types.proto"
+package:  "rebuild.common"
+dependency:  "options/options.proto"
+message_type:  {
+  name:  "Money"
+  field:  {
+    name:  "currency"
+    number:  1
+    label:  LABEL_OPTIONAL
+    type:  TYPE_STRING
+    json_name:  "currency"
+  }
+  field:  {
+    name:  "units"
+    number:  2
+    label:  LABEL_OPTIONAL
+    type:  TYPE_INT64
+    json_name:  "units"
+    options:  {
+      [rebuild.options.level]:  LEVEL_HIGH
+    }
+  }
+  options:  {
+    [rebuild.options.doc]:  {
+      summary:  "An amount of money"
+      tags:  "finance"
+    }
+  }
+}
+enum_type:  {
+  name:  "Status"
+  value:  {
+    name:  "STATUS_UNSPECIFIED"
+    number:  0
+  }
+  value:  {
+    name:  "STATUS_ACTIVE"
+    number:  1
+    options:  {
+      [rebuild.options.label]:  "Active"
+    }
+  }
+  value:  {
+    name:  "STATUS_CLOSED"
+    number:  2
+    options:  {
+      [rebuild.options.label]:  "Closed"
+    }
+  }
+}
+options:  {
+  [rebuild.options.owner]:  "common"
+}
+syntax:  "proto3"

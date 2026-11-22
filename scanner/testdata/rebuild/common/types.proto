@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package rebuild.common;
+
+import "options/options.proto";
+
+option (rebuild.options.owner) = "common";
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_ACTIVE = 1 [(rebuild.options.label) = "Active"];
+  STATUS_CLOSED = 2 [(rebuild.options.label) = "Closed"];
+}
+
+message Money {
+  option (rebuild.options.doc) = { summary: "An amount of money" tags: "finance" };
+
+  string currency = 1;
+  int64 units = 2 [(rebuild.options.level) = LEVEL_HIGH];
+}

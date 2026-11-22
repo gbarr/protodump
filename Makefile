@@ -30,9 +30,10 @@ fmt:
 tidy:
 	$(GO) mod tidy
 
-## update-testdata: regenerate testdata/descriptors.txtpb (requires protoc)
+## update-testdata: regenerate testdata/descriptors.txtpb and scanner/testdata (requires protoc)
 update-testdata:
 	$(GO) test -run TestDumpTestdata -update .
+	$(GO) test ./scanner -run 'TestRebuild(TestdataDescriptors|Dump)' -update
 
 ## install: install proto-extract into GOBIN
 install:

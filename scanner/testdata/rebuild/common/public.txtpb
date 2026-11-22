@@ -1,0 +1,22 @@
+name:  "common/public.proto"
+package:  "rebuild.common"
+dependency:  "common/types.proto"
+public_dependency:  0
+message_type:  {
+  name:  "Page"
+  field:  {
+    name:  "size"
+    number:  1
+    label:  LABEL_OPTIONAL
+    type:  TYPE_INT32
+    json_name:  "size"
+  }
+  field:  {
+    name:  "token"
+    number:  2
+    label:  LABEL_OPTIONAL
+    type:  TYPE_STRING
+    json_name:  "token"
+  }
+}
+syntax:  "proto3"

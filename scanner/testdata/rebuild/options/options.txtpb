@@ -1,0 +1,94 @@
+name:  "options/options.proto"
+package:  "rebuild.options"
+dependency:  "google/protobuf/descriptor.proto"
+message_type:  {
+  name:  "Doc"
+  field:  {
+    name:  "summary"
+    number:  1
+    label:  LABEL_OPTIONAL
+    type:  TYPE_STRING
+    json_name:  "summary"
+  }
+  field:  {
+    name:  "tags"
+    number:  2
+    label:  LABEL_REPEATED
+    type:  TYPE_STRING
+    json_name:  "tags"
+  }
+}
+enum_type:  {
+  name:  "Level"
+  value:  {
+    name:  "LEVEL_UNSPECIFIED"
+    number:  0
+  }
+  value:  {
+    name:  "LEVEL_LOW"
+    number:  1
+  }
+  value:  {
+    name:  "LEVEL_HIGH"
+    number:  2
+  }
+}
+extension:  {
+  name:  "owner"
+  number:  50000
+  label:  LABEL_OPTIONAL
+  type:  TYPE_STRING
+  extendee:  ".google.protobuf.FileOptions"
+  json_name:  "owner"
+}
+extension:  {
+  name:  "doc"
+  number:  50001
+  label:  LABEL_OPTIONAL
+  type:  TYPE_MESSAGE
+  type_name:  ".rebuild.options.Doc"
+  extendee:  ".google.protobuf.MessageOptions"
+  json_name:  "doc"
+}
+extension:  {
+  name:  "level"
+  number:  50002
+  label:  LABEL_OPTIONAL
+  type:  TYPE_ENUM
+  type_name:  ".rebuild.options.Level"
+  extendee:  ".google.protobuf.FieldOptions"
+  json_name:  "level"
+}
+extension:  {
+  name:  "sensitive"
+  number:  50003
+  label:  LABEL_OPTIONAL
+  type:  TYPE_BOOL
+  extendee:  ".google.protobuf.FieldOptions"
+  json_name:  "sensitive"
+}
+extension:  {
+  name:  "label"
+  number:  50004
+  label:  LABEL_OPTIONAL
+  type:  TYPE_STRING
+  extendee:  ".google.protobuf.EnumValueOptions"
+  json_name:  "label"
+}
+extension:  {
+  name:  "route"
+  number:  50005
+  label:  LABEL_OPTIONAL
+  type:  TYPE_STRING
+  extendee:  ".google.protobuf.ServiceOptions"
+  json_name:  "route"
+}
+extension:  {
+  name:  "timeout_ms"
+  number:  50006
+  label:  LABEL_OPTIONAL
+  type:  TYPE_INT32
+  extendee:  ".google.protobuf.MethodOptions"
+  json_name:  "timeoutMs"
+}
+syntax:  "proto3"

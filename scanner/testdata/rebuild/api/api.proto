@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package rebuild.api;
+
+import "common/public.proto";
+import "google/protobuf/descriptor.proto";
+import "options/options.proto";
+
+option (rebuild.options.owner) = "api";
+
+extend google.protobuf.MessageOptions {
+  bool internal = 50100;
+}
+
+message Account {
+  option (rebuild.options.doc) = { summary: "A customer account" };
+
+  string id = 1;
+  rebuild.common.Money balance = 2;
+  rebuild.common.Status status = 3;
+  string email = 4 [(rebuild.options.sensitive) = true, (rebuild.options.level) = LEVEL_LOW];
+  map<string, rebuild.common.Money> holdings = 5;
+}
+
+message ListAccountsRequest {
+  option (internal) = true;
+
+  rebuild.common.Page page = 1;
+}
+
+message ListAccountsResponse {
+  repeated Account accounts = 1;
+  rebuild.common.Page next = 2;
+}
+
+service Accounts {
+  option (rebuild.options.route) = "/accounts";
+
+  rpc List(ListAccountsRequest) returns (ListAccountsResponse) {
+    option (rebuild.options.timeout_ms) = 500;
+  }
+}

@@ -1,0 +1,135 @@
+name:  "api/api.proto"
+package:  "rebuild.api"
+dependency:  "common/public.proto"
+dependency:  "google/protobuf/descriptor.proto"
+dependency:  "options/options.proto"
+message_type:  {
+  name:  "Account"
+  field:  {
+    name:  "id"
+    number:  1
+    label:  LABEL_OPTIONAL
+    type:  TYPE_STRING
+    json_name:  "id"
+  }
+  field:  {
+    name:  "balance"
+    number:  2
+    label:  LABEL_OPTIONAL
+    type:  TYPE_MESSAGE
+    type_name:  ".rebuild.common.Money"
+    json_name:  "balance"
+  }
+  field:  {
+    name:  "status"
+    number:  3
+    label:  LABEL_OPTIONAL
+    type:  TYPE_ENUM
+    type_name:  ".rebuild.common.Status"
+    json_name:  "status"
+  }
+  field:  {
+    name:  "email"
+    number:  4
+    label:  LABEL_OPTIONAL
+    type:  TYPE_STRING
+    json_name:  "email"
+    options:  {
+      [rebuild.options.level]:  LEVEL_LOW
+      [rebuild.options.sensitive]:  true
+    }
+  }
+  field:  {
+    name:  "holdings"
+    number:  5
+    label:  LABEL_REPEATED
+    type:  TYPE_MESSAGE
+    type_name:  ".rebuild.api.Account.HoldingsEntry"
+    json_name:  "holdings"
+  }
+  nested_type:  {
+    name:  "HoldingsEntry"
+    field:  {
+      name:  "key"
+      number:  1
+      label:  LABEL_OPTIONAL
+      type:  TYPE_STRING
+      json_name:  "key"
+    }
+    field:  {
+      name:  "value"
+      number:  2
+      label:  LABEL_OPTIONAL
+      type:  TYPE_MESSAGE
+      type_name:  ".rebuild.common.Money"
+      json_name:  "value"
+    }
+    options:  {
+      map_entry:  true
+    }
+  }
+  options:  {
+    [rebuild.options.doc]:  {
+      summary:  "A customer account"
+    }
+  }
+}
+message_type:  {
+  name:  "ListAccountsRequest"
+  field:  {
+    name:  "page"
+    number:  1
+    label:  LABEL_OPTIONAL
+    type:  TYPE_MESSAGE
+    type_name:  ".rebuild.common.Page"
+    json_name:  "page"
+  }
+  options:  {
+    [rebuild.api.internal]:  true
+  }
+}
+message_type:  {
+  name:  "ListAccountsResponse"
+  field:  {
+    name:  "accounts"
+    number:  1
+    label:  LABEL_REPEATED
+    type:  TYPE_MESSAGE
+    type_name:  ".rebuild.api.Account"
+    json_name:  "accounts"
+  }
+  field:  {
+    name:  "next"
+    number:  2
+    label:  LABEL_OPTIONAL
+    type:  TYPE_MESSAGE
+    type_name:  ".rebuild.common.Page"
+    json_name:  "next"
+  }
+}
+service:  {
+  name:  "Accounts"
+  method:  {
+    name:  "List"
+    input_type:  ".rebuild.api.ListAccountsRequest"
+    output_type:  ".rebuild.api.ListAccountsResponse"
+    options:  {
+      [rebuild.options.timeout_ms]:  500
+    }
+  }
+  options:  {
+    [rebuild.options.route]:  "/accounts"
+  }
+}
+extension:  {
+  name:  "internal"
+  number:  50100
+  label:  LABEL_OPTIONAL
+  type:  TYPE_BOOL
+  extendee:  ".google.protobuf.MessageOptions"
+  json_name:  "internal"
+}
+options:  {
+  [rebuild.options.owner]:  "api"
+}
+syntax:  "proto3"
