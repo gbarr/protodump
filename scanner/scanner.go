@@ -412,7 +412,7 @@ func (s *Scanner) WriteFiles(dir string) error {
 			return true
 		}
 		if err := writeFile(root, name, buf.Bytes()); err != nil {
-			errs = append(errs, fmt.Errorf("dump failed %s: %w", name, err))
+			errs = append(errs, fmt.Errorf("write failed %s: %w", name, err))
 			return true
 		}
 		written++

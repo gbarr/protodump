@@ -219,8 +219,8 @@ func TestWriteFilesStaysInDir(t *testing.T) {
 	if !ok || len(errs) != 1 {
 		t.Fatalf("WriteFiles error = %v, want Errors with 1 error", err)
 	}
-	if msg := errs[0].Error(); !strings.HasPrefix(msg, "dump failed ../escape.proto: ") {
-		t.Errorf("errs[0] = %q, want dump failed ../escape.proto", msg)
+	if msg := errs[0].Error(); !strings.HasPrefix(msg, "write failed ../escape.proto: ") {
+		t.Errorf("errs[0] = %q, want write failed ../escape.proto", msg)
 	}
 	if _, err := os.Stat(filepath.Join(base, "escape.proto")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("escape.proto was written outside the output directory (stat err = %v)", err)
