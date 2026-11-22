@@ -19,7 +19,8 @@ func main() {
 
 	s := scanner.New(nil)
 	if err := s.Scan(args[0]); err != nil {
-		// Descriptors that could not be added are reported, but the files
+		// Descriptors that could not be added, and files or directories
+		// under SOURCE that could not be read, are reported, but the files
 		// that were found are still dumped.
 		if _, ok := errors.AsType[scanner.Errors](err); !ok {
 			log.Fatal(err)

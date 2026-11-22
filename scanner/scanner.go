@@ -77,7 +77,10 @@ func (s *Scanner) Scan(source string) error {
 }
 
 // ScanDir scans every executable regular file under dir with ScanFile. It
-// continues past files that fail and returns their errors joined.
+// continues past files and subdirectories that cannot be read or scanned,
+// and once the whole tree has been walked reports their errors together as
+// an Errors, with the Errors from each ScanFile flattened into it. An error
+// opening dir itself, such as it not existing, is returned as it is.
 func (s *Scanner) ScanDir(dir string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -85,17 +88,21 @@ func (s *Scanner) ScanDir(dir string) error {
 	}
 	defer func() { _ = root.Close() }() // a directory handle; nothing to flush
 
-	var scanErrors error
+	var errs Errors
 	err = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			// Only a failed stat of the root or ReadDir of a directory gets
+			// here, so skip that directory and carry on.
+			errs = append(errs, inDir(dir, err))
+			return fs.SkipDir
 		}
 		if !d.Type().IsRegular() {
 			return nil
 		}
 		fileInfo, err := d.Info()
 		if err != nil {
-			return err
+			errs = append(errs, inDir(dir, err))
+			return nil
 		}
 
 		// only interested in files which are executable
@@ -104,11 +111,32 @@ func (s *Scanner) ScanDir(dir string) error {
 			return nil
 		}
 		if err := s.ScanFile(filepath.Join(dir, path)); err != nil {
-			scanErrors = errors.Join(scanErrors, err)
+			if fileErrs, ok := errors.AsType[Errors](err); ok {
+				errs = append(errs, fileErrs...)
+			} else {
+				errs = append(errs, err)
+			}
 		}
 		return nil
 	})
-	return errors.Join(scanErrors, err)
+	if err != nil {
+		return err
+	}
+
+	// Return nil, not an empty Errors, so that a nil check still works.
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
+// inDir makes the path in err, a path relative to dir from walking an
+// os.Root, include dir, so that the error names the file in full.
+func inDir(dir string, err error) error {
+	if pathErr, ok := errors.AsType[*fs.PathError](err); ok && !filepath.IsAbs(pathErr.Path) {
+		pathErr.Path = filepath.Join(dir, pathErr.Path)
+	}
+	return err
 }
 
 // ScanFile reads the file named source and scans its contents with

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -833,4 +834,137 @@ func TestFindDescriptorLookBack(t *testing.T) {
 			t.Errorf("findDescriptor with a %d-byte name = %d, want %d", len(name), got, tt.want)
 		}
 	}
+}
+
+// writeExecutable writes data to name under dir, creating any parent
+// directories, with the given mode.
+func writeExecutable(t *testing.T, dir, name string, data []byte, mode os.FileMode) string {
+	t.Helper()
+	path := filepath.Join(dir, filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Set the mode after writing, so that files the test cannot read can
+	// still be created.
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestScanDir checks that ScanDir scans executable files in every
+// subdirectory, carries on past files and directories it cannot read, and
+// reports their errors together with descriptor errors as one Errors.
+func TestScanDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, so permissions do not stop files being read")
+	}
+	encode := func(file *descriptorpb.FileDescriptorProto) []byte {
+		b, err := proto.Marshal(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.Concat([]byte("filler"), b, []byte{0})
+	}
+	file := func(name string) *descriptorpb.FileDescriptorProto {
+		return &descriptorpb.FileDescriptorProto{Name: new(name), Syntax: new("proto3")}
+	}
+	bad := &descriptorpb.FileDescriptorProto{
+		Name:        new("bad.proto"),
+		Syntax:      new("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{message("Bad", 1, 1)},
+	}
+
+	dir := t.TempDir()
+	writeExecutable(t, dir, "a", encode(file("a.proto")), 0o755)
+	unreadable := writeExecutable(t, dir, "b", encode(file("b.proto")), 0o111)
+	badPath := writeExecutable(t, dir, "c", encode(bad), 0o755)
+	writeExecutable(t, dir, "locked/d", encode(file("d.proto")), 0o755)
+	writeExecutable(t, dir, "notexec", encode(file("notexec.proto")), 0o644)
+	// Walked after the directories that fail, so the walk must go on.
+	writeExecutable(t, dir, "z/e", encode(file("e.proto")), 0o755)
+
+	locked := filepath.Join(dir, "locked")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) }) // so TempDir can remove it
+
+	s := New(nil)
+	err := s.ScanDir(dir)
+	errs, ok := errors.AsType[Errors](err)
+	if !ok {
+		t.Fatalf("ScanDir error = %v (%T), want Errors", err, err)
+	}
+
+	var got []string
+	s.Files().RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		got = append(got, fd.Path())
+		return true
+	})
+	slices.Sort(got)
+	if want := []string{"a.proto", "e.proto"}; !slices.Equal(got, want) {
+		t.Errorf("registered %q, want %q", got, want)
+	}
+
+	// One error each for b, c and locked, flattened and naming the path.
+	if len(errs) != 3 {
+		t.Fatalf("ScanDir returned %d errors, want 3:\n%v", len(errs), errs)
+	}
+	for i, want := range []struct {
+		prefix     string
+		permission bool
+	}{
+		{"open " + unreadable + ": ", true},
+		{badPath + ": addFileDescriptor at 6: ", false},
+		{"openat " + locked + ": ", true},
+	} {
+		if msg := errs[i].Error(); !strings.HasPrefix(msg, want.prefix) {
+			t.Errorf("errs[%d] = %q, want prefix %q", i, msg, want.prefix)
+		}
+		if got := errors.Is(errs[i], fs.ErrPermission); got != want.permission {
+			t.Errorf("errors.Is(errs[%d], fs.ErrPermission) = %v, want %v", i, got, want.permission)
+		}
+	}
+}
+
+func TestScanDirErrors(t *testing.T) {
+	t.Run("no errors", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExecutable(t, dir, "a", []byte("no descriptors here"), 0o755)
+		if err := New(nil).ScanDir(dir); err != nil {
+			t.Errorf("ScanDir error = %v, want nil", err)
+		}
+	})
+
+	t.Run("unreadable dir", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("running as root, so permissions do not stop the directory being read")
+		}
+		dir := filepath.Join(t.TempDir(), "locked")
+		if err := os.Mkdir(dir, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // so TempDir can remove it
+		err := New(nil).ScanDir(dir)
+		if !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("ScanDir error = %v, want fs.ErrPermission", err)
+		}
+		if _, ok := errors.AsType[Errors](err); ok {
+			t.Errorf("ScanDir error = %v, want a plain error, not Errors", err)
+		}
+	})
+
+	t.Run("missing dir", func(t *testing.T) {
+		err := New(nil).ScanDir(filepath.Join(t.TempDir(), "missing"))
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("ScanDir error = %v, want fs.ErrNotExist", err)
+		}
+		if _, ok := errors.AsType[Errors](err); ok {
+			t.Errorf("ScanDir error = %v, want a plain error, not Errors", err)
+		}
+	})
 }
