@@ -31,6 +31,11 @@ import (
 // whose options cannot be decoded again is still registered, with them left
 // unknown, and the error is reported in the same way. An import cycle, which
 // protoc does not allow, is broken at the import that closes it.
+//
+// If files does not hold google/protobuf/descriptor.proto, the copy built
+// into descriptorpb is registered in its place, as the options messages that
+// custom options extend, and any other references to its types, would
+// otherwise be left unresolved.
 func rebuild(files *protoregistry.Files) (*protoregistry.Files, Errors) {
 	var paths []string
 	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
@@ -42,6 +47,10 @@ func rebuild(files *protoregistry.Files) (*protoregistry.Files, Errors) {
 	slices.Sort(paths)
 
 	rebuilt := new(protoregistry.Files)
+	if _, err := files.FindFileByPath(descriptorProto); err != nil {
+		// A new registry holds no other file, so this cannot conflict.
+		_ = rebuilt.RegisterFile(descriptorpb.File_google_protobuf_descriptor_proto)
+	}
 	rebuiltTypes := dynamicpb.NewTypes(rebuilt)
 	visited := make(map[string]bool, len(paths))
 	var errs Errors

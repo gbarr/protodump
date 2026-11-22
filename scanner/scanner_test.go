@@ -968,10 +968,10 @@ func TestScanDirErrors(t *testing.T) {
 	})
 }
 
-// customOptions returns the encoded descriptor.proto followed by a file that
-// defines and uses a custom field option, as found in a Go binary that uses
-// custom options.
-func customOptions(t *testing.T) []byte {
+// customOptions returns a file that defines and uses a custom field option,
+// encoded as found in a Go binary that uses custom options. With
+// withDescriptorProto it is preceded by the encoded descriptor.proto.
+func customOptions(t *testing.T, withDescriptorProto bool) []byte {
 	t.Helper()
 	fieldOpts := new(descriptorpb.FieldOptions)
 	fieldOpts.ProtoReflect().SetUnknown(protowire.AppendString(protowire.AppendTag(nil, 50000, protowire.BytesType), "hi"))
@@ -1000,11 +1000,12 @@ func customOptions(t *testing.T) []byte {
 			}},
 		}},
 	}
+	files := []*descriptorpb.FileDescriptorProto{opts}
+	if withDescriptorProto {
+		files = slices.Insert(files, 0, protodesc.ToFileDescriptorProto(descriptorpb.File_google_protobuf_descriptor_proto))
+	}
 	var data []byte
-	for _, file := range []*descriptorpb.FileDescriptorProto{
-		protodesc.ToFileDescriptorProto(descriptorpb.File_google_protobuf_descriptor_proto),
-		opts,
-	} {
+	for _, file := range files {
 		b, err := proto.Marshal(file)
 		if err != nil {
 			t.Fatal(err)
@@ -1018,7 +1019,7 @@ func customOptions(t *testing.T) []byte {
 // references to its types resolve, but is never dumped or written.
 func TestDescriptorProto(t *testing.T) {
 	s := New(nil)
-	if err := s.ScanBytes(customOptions(t)); err != nil {
+	if err := s.ScanBytes(customOptions(t, true)); err != nil {
 		t.Fatalf("ScanBytes error = %v, want nil", err)
 	}
 	if _, err := s.Files().FindFileByPath(descriptorProto); err != nil {
@@ -1056,6 +1057,36 @@ func TestDescriptorProto(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(descriptorProto))); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("%s written (stat error = %v)", descriptorProto, err)
+	}
+}
+
+// TestCustomOptionsWithoutDescriptorProto checks that custom options are
+// resolved and dumped when descriptor.proto was not among the files found,
+// as rebuild falls back to the copy built into descriptorpb.
+func TestCustomOptionsWithoutDescriptorProto(t *testing.T) {
+	s := New(nil)
+	if err := s.ScanBytes(customOptions(t, false)); err != nil {
+		t.Fatalf("ScanBytes error = %v, want nil", err)
+	}
+	if _, err := s.Files().FindFileByPath(descriptorProto); err == nil {
+		t.Fatalf("%s registered, want it missing from the scan", descriptorProto)
+	}
+
+	var buf strings.Builder
+	if err := s.Dump(&buf); err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+	got := buf.String()
+	for _, want := range []string{
+		`int32 a = 1 [(opts.my_opt) = "hi"];`,
+		"extend .google.protobuf.FieldOptions {",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Dump output does not contain %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "// "+descriptorProto) {
+		t.Errorf("Dump output includes %s:\n%s", descriptorProto, got)
 	}
 }
 
