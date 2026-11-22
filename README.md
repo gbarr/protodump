@@ -1,7 +1,7 @@
 # protodump
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/gbarr/protodump.svg)](https://pkg.go.dev/github.com/gbarr/protodump)
-[![CI](https://github.com/gbarr/protodump/actions/workflows/ci.yml/badge.svg)](https://github.com/gbarr/protodump/actions/workflows/ci.yml)
+[![Test](https://github.com/gbarr/protodump/actions/workflows/ci.yml/badge.svg)](https://github.com/gbarr/protodump/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/gbarr/protodump)](go.mod)
 
 Package `protodump` writes `.proto` source files from protobuf file
