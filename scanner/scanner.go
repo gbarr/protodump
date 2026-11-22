@@ -297,14 +297,16 @@ func (s *Scanner) addFileDescriptor(encoded []byte) error {
 	return s.register(&pb)
 }
 
+// descriptorProto is the path of descriptor.proto, which is registered so
+// that custom options and other references to its types resolve, but is
+// never dumped: protoc always provides it, so files that import it are
+// valid without a copy.
+var descriptorProto = descriptorpb.File_google_protobuf_descriptor_proto.Path()
+
 func (s *Scanner) register(proto *descriptorpb.FileDescriptorProto) error {
 	name := proto.GetName()
 	if name == "" {
 		return errors.New("missing Name")
-	}
-
-	if name == "google/protobuf/descriptor.proto" {
-		return nil // silently skip. It will fail to register
 	}
 
 	// FIXME(gbarr): The same file is often found more than once
@@ -326,14 +328,17 @@ func (s *Scanner) register(proto *descriptorpb.FileDescriptorProto) error {
 	return nil
 }
 
-// Dump writes .proto source for every registered file to w, in order of
-// file path, each preceded by a comment line giving its path. Files that
+// Dump writes .proto source for every registered file except
+// google/protobuf/descriptor.proto to w, in order of file path, each
+// preceded by a comment line giving its path. Files that
 // cannot be dumped are skipped; if any are, it returns an Errors with an
 // error for each. An error writing to w is returned immediately.
 func (s *Scanner) Dump(w io.Writer) error {
 	var files []protoreflect.FileDescriptor
 	s.files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		files = append(files, fd)
+		if fd.Path() != descriptorProto {
+			files = append(files, fd)
+		}
 		return true
 	})
 	slices.SortFunc(files, func(a, b protoreflect.FileDescriptor) int {
@@ -370,9 +375,10 @@ func (s *Scanner) Dump(w io.Writer) error {
 	return nil
 }
 
-// WriteFiles writes .proto source for every registered file to dir, which is
-// created if needed. File names that would leave dir are rejected. Files
-// that cannot be written are skipped; if any are, it returns an Errors with
+// WriteFiles writes .proto source for every registered file except
+// google/protobuf/descriptor.proto to dir, which is created if needed.
+// File names that would leave dir are rejected. Filesthat cannot be
+// written are skipped; if any are, it returns an Errors with
 // an error for each.
 func (s *Scanner) WriteFiles(dir string) error {
 	err := os.MkdirAll(dir, 0o700)
@@ -392,8 +398,12 @@ func (s *Scanner) WriteFiles(dir string) error {
 	defer func() { _ = root.Close() }() // a directory handle; nothing to flush
 
 	var errs Errors
-	written := 0
+	written, skipped := 0, 0
 	s.files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		if fd.Path() == descriptorProto {
+			skipped++
+			return true
+		}
 		pd := protodesc.ToFileDescriptorProto(fd)
 		var buf bytes.Buffer
 		name := pd.GetName()
@@ -413,7 +423,7 @@ func (s *Scanner) WriteFiles(dir string) error {
 	if len(errs) > 0 {
 		return errs
 	}
-	if total := s.files.NumFiles(); total != written {
+	if total := s.files.NumFiles() - skipped; total != written {
 		return fmt.Errorf("failed to write all files (wrote %d of %d)", written, total)
 	}
 	return nil

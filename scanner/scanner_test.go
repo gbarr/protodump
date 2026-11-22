@@ -741,7 +741,7 @@ func TestScanBytesFileSet(t *testing.T) {
 
 	// Files chosen to stress the boundaries between set entries: a name of
 	// length magicByte, a file with only a name and syntax, one too big for
-	// a single-byte length, descriptor.proto, which register skips, and a
+	// a single-byte length, descriptor.proto as a large real file, and a
 	// file whose dependencies are .proto strings that must not be taken as
 	// descriptors.
 	big := &descriptorpb.FileDescriptorProto{Name: new("dir/big.proto"), Package: new("big"), Syntax: new("proto3")}
@@ -767,15 +767,11 @@ func TestScanBytesFileSet(t *testing.T) {
 		}
 		return b
 	}
-	// want is every file in sets except descriptor.proto.
+	// want is every file in sets.
 	want := func(sets ...*descriptorpb.FileDescriptorSet) []*descriptorpb.FileDescriptorProto {
 		var files []*descriptorpb.FileDescriptorProto
 		for _, set := range sets {
-			for _, file := range set.File {
-				if file.GetName() != "google/protobuf/descriptor.proto" {
-					files = append(files, file)
-				}
-			}
+			files = append(files, set.File...)
 		}
 		return files
 	}
@@ -967,4 +963,123 @@ func TestScanDirErrors(t *testing.T) {
 			t.Errorf("ScanDir error = %v, want a plain error, not Errors", err)
 		}
 	})
+}
+
+// customOptions returns the encoded descriptor.proto followed by a file that
+// defines and uses a custom field option, as found in a Go binary that uses
+// custom options.
+func customOptions(t *testing.T) []byte {
+	t.Helper()
+	fieldOpts := new(descriptorpb.FieldOptions)
+	fieldOpts.ProtoReflect().SetUnknown(protowire.AppendString(protowire.AppendTag(nil, 50000, protowire.BytesType), "hi"))
+	opts := &descriptorpb.FileDescriptorProto{
+		Name:       new("opts.proto"),
+		Package:    new("opts"),
+		Dependency: []string{descriptorProto},
+		Syntax:     new("proto3"),
+		Extension: []*descriptorpb.FieldDescriptorProto{{
+			Name:     new("my_opt"),
+			Number:   new(int32(50000)),
+			Label:    new(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
+			Type:     new(descriptorpb.FieldDescriptorProto_TYPE_STRING),
+			Extendee: new(".google.protobuf.FieldOptions"),
+			JsonName: new("myOpt"),
+		}},
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: new("M"),
+			Field: []*descriptorpb.FieldDescriptorProto{{
+				Name:     new("a"),
+				Number:   new(int32(1)),
+				Label:    new(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
+				Type:     new(descriptorpb.FieldDescriptorProto_TYPE_INT32),
+				JsonName: new("a"),
+				Options:  fieldOpts,
+			}},
+		}},
+	}
+	var data []byte
+	for _, file := range []*descriptorpb.FileDescriptorProto{
+		protodesc.ToFileDescriptorProto(descriptorpb.File_google_protobuf_descriptor_proto),
+		opts,
+	} {
+		b, err := proto.Marshal(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = slices.Concat(data, []byte("filler"), b, []byte{0})
+	}
+	return data
+}
+
+// TestDescriptorProto checks that descriptor.proto is registered, so that
+// references to its types resolve, but is never dumped or written.
+func TestDescriptorProto(t *testing.T) {
+	s := New(nil)
+	if err := s.ScanBytes(customOptions(t)); err != nil {
+		t.Fatalf("ScanBytes error = %v, want nil", err)
+	}
+	if _, err := s.Files().FindFileByPath(descriptorProto); err != nil {
+		t.Fatalf("%s not registered: %v", descriptorProto, err)
+	}
+	fd, err := s.Files().FindFileByPath("opts.proto")
+	if err != nil {
+		t.Fatalf("opts.proto not registered: %v", err)
+	}
+	if fd.Imports().Get(0).IsPlaceholder() {
+		t.Errorf("opts.proto import of %s is a placeholder", descriptorProto)
+	}
+	if xt := fd.Extensions().ByName("my_opt"); xt.ContainingMessage().IsPlaceholder() {
+		t.Errorf("extendee of my_opt is a placeholder")
+	}
+
+	var buf strings.Builder
+	if err := s.Dump(&buf); err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+	got := buf.String()
+	if !strings.HasPrefix(got, "// opts.proto\n") || !strings.Contains(got, `import "google/protobuf/descriptor.proto";`) {
+		t.Errorf("Dump output does not start with opts.proto importing descriptor.proto:\n%s", got)
+	}
+	if strings.Contains(got, "// "+descriptorProto) {
+		t.Errorf("Dump output includes %s:\n%s", descriptorProto, got)
+	}
+
+	out := filepath.Join(t.TempDir(), "out")
+	if err := s.WriteFiles(out); err != nil {
+		t.Fatalf("WriteFiles error = %v, want nil", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "opts.proto")); err != nil {
+		t.Errorf("opts.proto not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(descriptorProto))); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%s written (stat error = %v)", descriptorProto, err)
+	}
+}
+
+// TestDescriptorProtoOnly checks that Dump and WriteFiles succeed, writing
+// nothing, when descriptor.proto is the only file found.
+func TestDescriptorProtoOnly(t *testing.T) {
+	encoded, err := proto.Marshal(protodesc.ToFileDescriptorProto(descriptorpb.File_google_protobuf_descriptor_proto))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(nil)
+	if err := s.ScanBytes(encoded); err != nil {
+		t.Fatalf("ScanBytes error = %v, want nil", err)
+	}
+	if n := s.Files().NumFiles(); n != 1 {
+		t.Fatalf("registered %d files, want 1", n)
+	}
+
+	var buf strings.Builder
+	if err := s.Dump(&buf); err != nil || buf.Len() != 0 {
+		t.Errorf("Dump = %q, %v, want no output and nil", buf.String(), err)
+	}
+	out := filepath.Join(t.TempDir(), "out")
+	if err := s.WriteFiles(out); err != nil {
+		t.Errorf("WriteFiles error = %v, want nil", err)
+	}
+	if entries, err := os.ReadDir(out); err != nil || len(entries) != 0 {
+		t.Errorf("WriteFiles wrote %v (err %v), want nothing", entries, err)
+	}
 }
