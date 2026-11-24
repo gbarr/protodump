@@ -18,6 +18,8 @@ import (
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/types/pluginpb"
 )
 
 func TestErrors(t *testing.T) {
@@ -1013,6 +1015,50 @@ func customOptions(t *testing.T, withDescriptorProto bool) []byte {
 		data = slices.Concat(data, []byte("filler"), b, []byte{0})
 	}
 	return data
+}
+
+// TestWellKnownNotWritten checks that none of the well-known files under
+// google/protobuf/ are written, whatever their package, while a file that
+// imports them is written with its imports.
+func TestWellKnownNotWritten(t *testing.T) {
+	files := []*descriptorpb.FileDescriptorProto{
+		protodesc.ToFileDescriptorProto(descriptorpb.File_google_protobuf_descriptor_proto),
+		protodesc.ToFileDescriptorProto(timestamppb.File_google_protobuf_timestamp_proto),
+		protodesc.ToFileDescriptorProto(pluginpb.File_google_protobuf_compiler_plugin_proto),
+		{
+			Name: new("user.proto"), Syntax: new("proto3"),
+			Dependency: []string{"google/protobuf/compiler/plugin.proto", "google/protobuf/timestamp.proto"},
+		},
+	}
+	s := New(nil)
+	if err := s.ScanFile(writeDescriptors(t, files...)); err != nil {
+		t.Fatalf("ScanFile: %v", err)
+	}
+	if n := s.Files().NumFiles(); n != len(files) {
+		t.Fatalf("%d files registered, want %d", n, len(files))
+	}
+
+	var buf strings.Builder
+	if err := s.Dump(&buf); err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+	want := `// user.proto
+syntax = "proto3";
+
+import "google/protobuf/compiler/plugin.proto";
+import "google/protobuf/timestamp.proto";
+`
+	if got := buf.String(); got != want {
+		t.Errorf("Dump output:\n%s\nwant:\n%s", got, want)
+	}
+
+	out := t.TempDir()
+	if n, err := s.WriteFiles(out); err != nil || n != 1 {
+		t.Fatalf("WriteFiles = %d, %v, want 1, nil", n, err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "google")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("well-known files written under %s (stat error = %v)", filepath.Join(out, "google"), err)
+	}
 }
 
 // TestDescriptorProto checks that descriptor.proto is registered, so that

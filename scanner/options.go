@@ -68,20 +68,15 @@ func (s *Scanner) SetFileOption(name, value string) error {
 // with no package is written to the top directory, with go_package set to
 // prefix.
 //
-// This go_package replaces any set by SetFileOption. Files in package
-// google.protobuf, the well-known types, are left where they are, with
-// their own go_package, as they are provided by protoc and the Go protobuf
-// module. If two files would be written to the same path, the first by
+// This go_package replaces any set by SetFileOption. The well-known files
+// under google/protobuf/ are never written, and imports of them are left
+// as they are. If two files would be written to the same path, the first by
 // original path is kept and the other is reported as an error.
 //
 // An empty prefix turns the layout off.
 func (s *Scanner) SetGoPackage(prefix string) {
 	s.goPackage = strings.TrimSuffix(prefix, "/")
 }
-
-// wellKnownPackage is the proto package of the well-known types, which
-// SetGoPackage does not move.
-const wellKnownPackage = "google.protobuf"
 
 // goPackageDir returns the directory, and the Go package name, for proto
 // package pkg: lower case, with each "." replaced by "_", and "pb" added.
@@ -106,7 +101,7 @@ func (s *Scanner) layout() (map[string]string, Errors) {
 	var errs Errors
 	for _, original := range sortedPaths(s.files) {
 		fd, err := s.files.FindFileByPath(original)
-		if err != nil || fd.Package() == wellKnownPackage {
+		if err != nil || wellKnown(original) {
 			continue
 		}
 		moved := path.Join(goPackageDir(fd.Package()), path.Base(original))
@@ -139,7 +134,7 @@ func (s *Scanner) fileProto(fd protoreflect.FileDescriptor) *descriptorpb.FileDe
 		}
 		proto.Merge(pb.Options, s.fileOptions)
 	}
-	if s.goPackage != "" && fd.Package() != wellKnownPackage {
+	if s.goPackage != "" {
 		if pb.Options == nil {
 			pb.Options = new(descriptorpb.FileOptions)
 		}

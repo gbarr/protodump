@@ -52,7 +52,8 @@ func main() {
 		log.Fatal(err)
 	}
 	if written == 0 {
-		// Only files that are never written, such as descriptor.proto.
+		// Only well-known files, such as descriptor.proto, which are never
+		// written.
 		log.Fatal("no descriptors to write")
 	}
 

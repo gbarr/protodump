@@ -300,10 +300,21 @@ func (s *Scanner) addFileDescriptor(encoded []byte) error {
 }
 
 // descriptorProto is the path of descriptor.proto, which is registered so
-// that custom options and other references to its types resolve, but is
-// never dumped: protoc always provides it, so files that import it are
-// valid without a copy.
+// that custom options and other references to its types resolve. Like the
+// other well-known files it is never dumped.
 var descriptorProto = descriptorpb.File_google_protobuf_descriptor_proto.Path()
+
+// wellKnownDir is the directory of the well-known files, such as
+// descriptor.proto and timestamp.proto, that protoc always provides.
+const wellKnownDir = "google/protobuf/"
+
+// wellKnown reports whether path is one of the well-known files. They are
+// registered, so that references to their types resolve, but never dumped:
+// protoc provides them, so files that import them are valid without a copy,
+// and each has a fixed Go package in the protobuf module.
+func wellKnown(path string) bool {
+	return strings.HasPrefix(path, wellKnownDir)
+}
 
 func (s *Scanner) register(proto *descriptorpb.FileDescriptorProto) error {
 	name := proto.GetName()
@@ -389,19 +400,20 @@ func (r *importResolver) FindDescriptorByName(name protoreflect.FullName) (proto
 	return d, nil
 }
 
-// Dump writes .proto source for every registered file except
-// google/protobuf/descriptor.proto to w, in order of file path, each
-// preceded by a comment line giving its path. The files are first rebuilt
-// in import order, so that references between them and their custom options
-// resolve whatever order they were found in. Files that cannot be rebuilt or
-// dumped are skipped; if any are, it returns an Errors with an error for
-// each. An error writing to w is returned immediately.
+// Dump writes .proto source for every registered file except the
+// well-known files under google/protobuf/, which protoc provides, to w, in
+// order of file path, each preceded by a comment line giving its path. The
+// files are first rebuilt in import order, so that references between them
+// and their custom options resolve whatever order they were found in. Files
+// that cannot be rebuilt or dumped are skipped; if any are, it returns an
+// Errors with an error for each. An error writing to w is returned
+// immediately.
 func (s *Scanner) Dump(w io.Writer) error {
 	registry, errs := s.rebuild()
 
 	var files []protoreflect.FileDescriptor
 	registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		if fd.Path() != descriptorProto {
+		if !wellKnown(fd.Path()) {
 			files = append(files, fd)
 		}
 		return true
@@ -439,13 +451,13 @@ func (s *Scanner) Dump(w io.Writer) error {
 	return nil
 }
 
-// WriteFiles writes .proto source for every registered file except
-// google/protobuf/descriptor.proto to dir, which is created if needed, and
-// returns how many files it wrote. As with Dump, the files are first rebuilt
-// in import order. File names that would leave dir are rejected. Files that
-// cannot be rebuilt, dumped or written are skipped; if any are, it returns
-// an Errors with an error for each, along with the count of those that were
-// written.
+// WriteFiles writes .proto source for every registered file except the
+// well-known files under google/protobuf/ to dir, which is created if
+// needed, and returns how many files it wrote. As with Dump, the files are
+// first rebuilt in import order. File names that would leave dir are
+// rejected. Files that cannot be rebuilt, dumped or written are skipped; if
+// any are, it returns an Errors with an error for each, along with the
+// count of those that were written.
 func (s *Scanner) WriteFiles(dir string) (int, error) {
 	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
@@ -466,7 +478,7 @@ func (s *Scanner) WriteFiles(dir string) (int, error) {
 	registry, errs := s.rebuild()
 	written := 0
 	registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		if fd.Path() == descriptorProto {
+		if wellKnown(fd.Path()) {
 			return true
 		}
 		pd := s.fileProto(fd)

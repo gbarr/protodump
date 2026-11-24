@@ -144,8 +144,9 @@ func TestSetGoPackage(t *testing.T) {
 	s.SetGoPackage("example.com/proto/")
 
 	out := t.TempDir()
-	if n, err := s.WriteFiles(out); err != nil || n != len(files) {
-		t.Fatalf("WriteFiles = %d, %v, want %d, nil", n, err, len(files))
+	// All but timestamp.proto, a well-known file.
+	if n, err := s.WriteFiles(out); err != nil || n != len(files)-1 {
+		t.Fatalf("WriteFiles = %d, %v, want %d, nil", n, err, len(files)-1)
 	}
 
 	want := map[string]string{
@@ -190,15 +191,6 @@ option go_package = "example.com/proto";
 		}
 	}
 
-	// The well-known types stay where they are, with their own go_package
-	// and only the options set by SetFileOption.
-	got, err := os.ReadFile(filepath.Join(out, "google", "protobuf", "timestamp.proto"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(got), `option go_package = "example.com/ignored";`) {
-		t.Errorf("timestamp.proto does not have go_package from SetFileOption:\n%s", got)
-	}
 }
 
 func TestSetGoPackageConflict(t *testing.T) {

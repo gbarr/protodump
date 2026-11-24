@@ -103,6 +103,9 @@ scanned at once, including any frameworks it contains:
 proto-extract -output protos /Applications/Example.app
 ```
 
+The well-known files under `google/protobuf/`, such as `descriptor.proto`
+and `timestamp.proto`, are never written, as `protoc` provides them.
+
 `-option name=value` sets a standard file option in every file written,
 replacing any value the file already has. It may be repeated:
 
@@ -115,8 +118,7 @@ proto package, with `DEST` standing for the import path `prefix`. A file in
 `package Foo.Bar;` is written to `DEST/foo_barpb/` under its base name, with
 `go_package` set to `prefix/foo_barpb`, and imports of it are changed to
 match. Files with no package go in `DEST` itself, with `go_package` set to
-`prefix`. This `go_package` replaces one given with `-option`. The
-well-known types in `google.protobuf` are not moved:
+`prefix`. This `go_package` replaces one given with `-option`:
 
 ```sh
 proto-extract -output protos -go_package example.com/proto /Applications/Example.app
