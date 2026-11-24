@@ -87,6 +87,17 @@ func (s *Scanner) SetRenameFiles(on bool) {
 	s.renameFiles = on
 }
 
+// SetWriteDescriptors sets whether WriteFiles also writes each file's
+// descriptor, a serialised FileDescriptorProto exactly as it was found in
+// the scanned data, next to its .proto file, with ".proto" replaced by
+// ".binpb". It is meant for debugging the output: the descriptor keeps the
+// file's original name and imports, and none of the options set by
+// SetFileOption or SetGoPackage. Files registered other than by scanning
+// have no descriptor to write. It is off by default.
+func (s *Scanner) SetWriteDescriptors(on bool) {
+	s.writeRaw = on
+}
+
 // goPackageDir returns the directory, and the Go package name, for the
 // .proto file at path: its base name without ".proto", in lower case, with
 // each character that cannot be in a Go identifier, such as ".", replaced
@@ -130,11 +141,12 @@ func (s *Scanner) layout() (map[string]string, Errors) {
 }
 
 // rebuild rebuilds s's registry, with the files renamed if SetGoPackage and
-// SetRenameFiles are on.
-func (s *Scanner) rebuild() (*protoregistry.Files, Errors) {
+// SetRenameFiles are on. It also returns the new path of each renamed file,
+// by its original path, as layout does.
+func (s *Scanner) rebuild() (*protoregistry.Files, map[string]string, Errors) {
 	paths, errs := s.layout()
 	registry, rebuildErrs := rebuild(s.files, paths)
-	return registry, append(errs, rebuildErrs...)
+	return registry, paths, append(errs, rebuildErrs...)
 }
 
 // fileProto returns fd, a file in the rebuilt registry, as a

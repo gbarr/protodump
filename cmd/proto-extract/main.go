@@ -26,12 +26,15 @@ func main() {
 		"`prefix`, named after the file, overriding any go_package set by -option")
 	rename := flag.Bool("rename", false, "with -go_package, write each file into the directory named by its Go\n"+
 		"package, so that DEST stands for the import path prefix")
+	debug := flag.Bool("debug", false, "also write each file's descriptor, exactly as found in SOURCE, next to\n"+
+		"its .proto file as a .binpb file")
 	flag.Parse()
 	s.SetGoPackage(*goPackage)
+	s.SetWriteDescriptors(*debug)
 	s.SetRenameFiles(*rename)
 	args := flag.Args()
 	if *output == "" || len(args) != 1 {
-		log.Fatal("proto-extract -output DEST [-go_package prefix [-rename]] [-option name=value]... SOURCE")
+		log.Fatal("proto-extract -output DEST [-go_package prefix [-rename]] [-option name=value]... [-debug] SOURCE")
 	}
 	if *rename && *goPackage == "" {
 		log.Fatal("-rename needs -go_package")

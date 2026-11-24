@@ -48,6 +48,11 @@ type Scanner struct {
 	fileOptions *descriptorpb.FileOptions // set by SetFileOption
 	goPackage   string                    // set by SetGoPackage
 	renameFiles bool                      // set by SetRenameFiles
+	writeRaw    bool                      // set by SetWriteDescriptors
+
+	// raw holds each registered file's descriptor as it was found in the
+	// scanned data, by its original path.
+	raw map[string][]byte
 }
 
 // New returns a Scanner that registers into files, or into a new, empty
@@ -56,7 +61,7 @@ func New(files *protoregistry.Files) *Scanner {
 	if files == nil {
 		files = new(protoregistry.Files)
 	}
-	return &Scanner{files: files}
+	return &Scanner{files: files, raw: make(map[string][]byte)}
 }
 
 // Files returns the registry the scanner registers into.
@@ -207,7 +212,8 @@ func (s *Scanner) ScanBytes(data []byte) error {
 
 const (
 	protoExtn = ".proto"
-	magicByte = 0xa // tag for BytesType(2) Number(1)
+	rawExtn   = ".binpb" // written by SetWriteDescriptors
+	magicByte = 0xa      // tag for BytesType(2) Number(1)
 
 	// stepbackLength is the difference between index and start when the
 	// filename length is the same as magicByte: the length byte, which is
@@ -297,7 +303,15 @@ func (s *Scanner) addFileDescriptor(encoded []byte) error {
 	if err != nil {
 		return fmt.Errorf("cannot unmarshal FileDescriptor: %w", err)
 	}
-	return s.register(&pb)
+	if err := s.register(&pb); err != nil {
+		return err
+	}
+	// Keep the first copy found, which is the one registered. encoded is
+	// part of the scanned data, so copy it rather than keep all of that.
+	if _, ok := s.raw[pb.GetName()]; !ok {
+		s.raw[pb.GetName()] = bytes.Clone(encoded)
+	}
+	return nil
 }
 
 // descriptorProto is the path of descriptor.proto, which is registered so
@@ -410,7 +424,7 @@ func (r *importResolver) FindDescriptorByName(name protoreflect.FullName) (proto
 // Errors with an error for each. An error writing to w is returned
 // immediately.
 func (s *Scanner) Dump(w io.Writer) error {
-	registry, errs := s.rebuild()
+	registry, _, errs := s.rebuild()
 
 	var files []protoreflect.FileDescriptor
 	registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
@@ -458,7 +472,8 @@ func (s *Scanner) Dump(w io.Writer) error {
 // first rebuilt in import order. File names that would leave dir are
 // rejected. Files that cannot be rebuilt, dumped or written are skipped; if
 // any are, it returns an Errors with an error for each, along with the
-// count of those that were written.
+// count of those that were written. With SetWriteDescriptors on, each
+// file's descriptor is written next to it too; these are not counted.
 func (s *Scanner) WriteFiles(dir string) (int, error) {
 	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
@@ -476,7 +491,11 @@ func (s *Scanner) WriteFiles(dir string) (int, error) {
 	}
 	defer func() { _ = root.Close() }() // a directory handle; nothing to flush
 
-	registry, errs := s.rebuild()
+	registry, paths, errs := s.rebuild()
+	original := make(map[string]string, len(paths)) // new path to original path
+	for from, to := range paths {
+		original[to] = from
+	}
 	written := 0
 	registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		if wellKnown(fd.Path()) {
@@ -494,6 +513,20 @@ func (s *Scanner) WriteFiles(dir string) (int, error) {
 			return true
 		}
 		written++
+
+		if !s.writeRaw {
+			return true
+		}
+		path := fd.Path()
+		if from, ok := original[path]; ok {
+			path = from
+		}
+		if raw, ok := s.raw[path]; ok {
+			rawName := strings.TrimSuffix(name, protoExtn) + rawExtn
+			if err := writeFile(root, rawName, raw); err != nil {
+				errs = append(errs, fmt.Errorf("write failed %s: %w", rawName, err))
+			}
+		}
 
 		return true
 	})

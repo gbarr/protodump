@@ -129,6 +129,16 @@ directory of its Go package, as `DEST/foobarpb/FooBar.proto`, so that
 proto-extract -output protos -go_package example.com/proto -rename /Applications/Example.app
 ```
 
+`-debug` also writes each file's descriptor, a serialised
+`FileDescriptorProto` exactly as it was found in `SOURCE`, next to its
+`.proto` file, as `DEST/dir/name.binpb` for `DEST/dir/name.proto`. It keeps
+the original file name and imports, and none of the options set by
+`-option` or `-go_package`. To read one:
+
+```sh
+protoc --decode=google.protobuf.FileDescriptorProto google/protobuf/descriptor.proto < protos/dir/name.binpb
+```
+
 ## Development
 
 ```sh

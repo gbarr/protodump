@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -286,5 +287,78 @@ option go_package = "example.com/proto/ypb";
 `
 	if got := buf.String(); got != want {
 		t.Errorf("Dump output:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestSetWriteDescriptors(t *testing.T) {
+	file := &descriptorpb.FileDescriptorProto{
+		Name: new("dir/a.proto"), Syntax: new("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{message("A", 1)},
+	}
+	timestamp := protodesc.ToFileDescriptorProto(timestamppb.File_google_protobuf_timestamp_proto)
+	want, err := proto.Marshal(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		on     bool
+		rename bool
+		path   string // where the descriptor should be written, or "" for nowhere
+	}{
+		{name: "off", path: ""},
+		{name: "on", on: true, path: "dir/a.binpb"},
+		// The descriptor follows the renamed .proto file, but keeps its
+		// original name.
+		{name: "renamed", on: true, rename: true, path: "apb/a.binpb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(nil)
+			if err := s.ScanFile(writeDescriptors(t, file, timestamp)); err != nil {
+				t.Fatalf("ScanFile: %v", err)
+			}
+			s.SetWriteDescriptors(tt.on)
+			if tt.rename {
+				s.SetGoPackage("example.com/proto")
+				s.SetRenameFiles(true)
+			}
+
+			out := t.TempDir()
+			// Only a.proto is counted: not timestamp.proto, a well-known
+			// file, nor the descriptor.
+			if n, err := s.WriteFiles(out); err != nil || n != 1 {
+				t.Fatalf("WriteFiles = %d, %v, want 1, nil", n, err)
+			}
+
+			var binpbs []string
+			err := filepath.WalkDir(out, func(path string, d os.DirEntry, err error) error {
+				if err == nil && strings.HasSuffix(path, rawExtn) {
+					rel, _ := filepath.Rel(out, path)
+					binpbs = append(binpbs, filepath.ToSlash(rel))
+				}
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.path == "" {
+				if len(binpbs) != 0 {
+					t.Fatalf("descriptors written: %v, want none", binpbs)
+				}
+				return
+			}
+			if len(binpbs) != 1 || binpbs[0] != tt.path {
+				t.Fatalf("descriptors written: %v, want [%s]", binpbs, tt.path)
+			}
+			got, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(tt.path)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(want) {
+				t.Errorf("%s = %x, want the descriptor as scanned, %x", tt.path, got, want)
+			}
+		})
 	}
 }
