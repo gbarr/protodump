@@ -5,19 +5,29 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gbarr/protodump/scanner"
 )
 
 func main() {
+	s := scanner.New(nil)
+
 	output := flag.String("output", "", "directory to output to")
+	flag.Func("option", "set file option `name=value` in every file written, such as\n"+
+		"go_package=example.com/proto; may be repeated", func(opt string) error {
+		name, value, ok := strings.Cut(opt, "=")
+		if !ok {
+			return fmt.Errorf("%q is not name=value", opt)
+		}
+		return s.SetFileOption(name, value)
+	})
 	flag.Parse()
 	args := flag.Args()
 	if *output == "" || len(args) != 1 {
-		log.Fatal("proto-extract -output DEST SOURCE")
+		log.Fatal("proto-extract -output DEST [-option name=value]... SOURCE")
 	}
 
-	s := scanner.New(nil)
 	if err := s.Scan(args[0]); err != nil {
 		// Descriptors that could not be added, and files or directories
 		// under SOURCE that could not be read, are reported, but the files

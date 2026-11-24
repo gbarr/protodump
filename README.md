@@ -103,6 +103,13 @@ scanned at once, including any frameworks it contains:
 proto-extract -output protos /Applications/Example.app
 ```
 
+`-option name=value` sets a standard file option in every file written,
+replacing any value the file already has. It may be repeated:
+
+```sh
+proto-extract -output protos -option go_package=example.com/proto /Applications/Example.app
+```
+
 ## Development
 
 ```sh

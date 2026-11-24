@@ -44,7 +44,8 @@ func (e Errors) Unwrap() []error {
 
 // Scanner registers the file descriptors it finds in a protoregistry.Files.
 type Scanner struct {
-	files *protoregistry.Files
+	files       *protoregistry.Files
+	fileOptions *descriptorpb.FileOptions // set by SetFileOption
 }
 
 // New returns a Scanner that registers into files, or into a new, empty
@@ -413,7 +414,7 @@ func (s *Scanner) Dump(w io.Writer) error {
 	for _, fd := range files {
 		// Dump into buf first so a file that fails leaves no partial output.
 		buf.Reset()
-		if err := protodump.Dump(&buf, protodesc.ToFileDescriptorProto(fd), registry); err != nil {
+		if err := protodump.Dump(&buf, s.fileProto(fd), registry); err != nil {
 			errs = append(errs, fmt.Errorf("dump failed %s: %w", fd.Path(), err))
 			continue
 		}
@@ -467,7 +468,7 @@ func (s *Scanner) WriteFiles(dir string) (int, error) {
 		if fd.Path() == descriptorProto {
 			return true
 		}
-		pd := protodesc.ToFileDescriptorProto(fd)
+		pd := s.fileProto(fd)
 		var buf bytes.Buffer
 		name := pd.GetName()
 		if err := protodump.Dump(&buf, pd, registry); err != nil {
