@@ -32,19 +32,19 @@ import (
 // unknown, and the error is reported in the same way. An import cycle, which
 // protoc does not allow, is broken at the import that closes it.
 //
+// Files are rebuilt under the paths given by paths, which maps a file's
+// path in files to its new path, and their imports are rewritten to match.
+// A file whose new path is "" is left out, and paths missing from the map
+// are kept. paths may be nil.
+//
 // If files does not hold google/protobuf/descriptor.proto, the copy built
 // into descriptorpb is registered in its place, as the options messages that
 // custom options extend, and any other references to its types, would
 // otherwise be left unresolved.
-func rebuild(files *protoregistry.Files) (*protoregistry.Files, Errors) {
-	var paths []string
-	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		paths = append(paths, fd.Path())
-		return true
-	})
+func rebuild(files *protoregistry.Files, paths map[string]string) (*protoregistry.Files, Errors) {
 	// Sort so that the order, and so any errors, do not depend on the
 	// registry's map order.
-	slices.Sort(paths)
+	sorted := sortedPaths(files)
 
 	rebuilt := new(protoregistry.Files)
 	if _, err := files.FindFileByPath(descriptorProto); err != nil {
@@ -52,7 +52,7 @@ func rebuild(files *protoregistry.Files) (*protoregistry.Files, Errors) {
 		_ = rebuilt.RegisterFile(descriptorpb.File_google_protobuf_descriptor_proto)
 	}
 	rebuiltTypes := dynamicpb.NewTypes(rebuilt)
-	visited := make(map[string]bool, len(paths))
+	visited := make(map[string]bool, len(sorted))
 	var errs Errors
 
 	var visit func(path string)
@@ -72,8 +72,12 @@ func rebuild(files *protoregistry.Files) (*protoregistry.Files, Errors) {
 			visit(imports.Get(i).Path())
 		}
 
-		fileOptions := protodesc.FileOptions{AllowUnresolvable: true}
 		pb := protodesc.ToFileDescriptorProto(fd)
+		if !movePaths(pb, paths) {
+			return
+		}
+
+		fileOptions := protodesc.FileOptions{AllowUnresolvable: true}
 		descriptor, err := fileOptions.New(pb, newImportResolver(rebuilt, pb))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("rebuild %s: create FileDescriptor: %w", path, err))
@@ -96,11 +100,42 @@ func rebuild(files *protoregistry.Files) (*protoregistry.Files, Errors) {
 		}
 	}
 
-	for _, path := range paths {
+	for _, path := range sorted {
 		visit(path)
 	}
 
 	return rebuilt, errs
+}
+
+// sortedPaths returns the paths of the files in files, sorted.
+func sortedPaths(files *protoregistry.Files) []string {
+	var paths []string
+	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		paths = append(paths, fd.Path())
+		return true
+	})
+	slices.Sort(paths)
+	return paths
+}
+
+// movePaths changes pb's name and imports to their new paths in paths. It
+// reports false, leaving pb unchanged, if pb is to be left out.
+func movePaths(pb *descriptorpb.FileDescriptorProto, paths map[string]string) bool {
+	if len(paths) == 0 {
+		return true
+	}
+	if name, ok := paths[pb.GetName()]; ok {
+		if name == "" {
+			return false
+		}
+		pb.Name = new(name)
+	}
+	for i, dep := range pb.Dependency {
+		if name := paths[dep]; name != "" {
+			pb.Dependency[i] = name
+		}
+	}
+	return true
 }
 
 // resolveOptions returns a copy of pb decoded again with its extensions

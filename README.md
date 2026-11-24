@@ -110,6 +110,18 @@ replacing any value the file already has. It may be repeated:
 proto-extract -output protos -option go_package=example.com/proto /Applications/Example.app
 ```
 
+`-go_package prefix` instead lays the output out as one Go package per
+proto package, with `DEST` standing for the import path `prefix`. A file in
+`package Foo.Bar;` is written to `DEST/foo_barpb/` under its base name, with
+`go_package` set to `prefix/foo_barpb`, and imports of it are changed to
+match. Files with no package go in `DEST` itself, with `go_package` set to
+`prefix`. This `go_package` replaces one given with `-option`. The
+well-known types in `google.protobuf` are not moved:
+
+```sh
+proto-extract -output protos -go_package example.com/proto /Applications/Example.app
+```
+
 ## Development
 
 ```sh

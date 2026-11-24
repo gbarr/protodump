@@ -46,6 +46,7 @@ func (e Errors) Unwrap() []error {
 type Scanner struct {
 	files       *protoregistry.Files
 	fileOptions *descriptorpb.FileOptions // set by SetFileOption
+	goPackage   string                    // set by SetGoPackage
 }
 
 // New returns a Scanner that registers into files, or into a new, empty
@@ -396,7 +397,7 @@ func (r *importResolver) FindDescriptorByName(name protoreflect.FullName) (proto
 // dumped are skipped; if any are, it returns an Errors with an error for
 // each. An error writing to w is returned immediately.
 func (s *Scanner) Dump(w io.Writer) error {
-	registry, errs := rebuild(s.files)
+	registry, errs := s.rebuild()
 
 	var files []protoreflect.FileDescriptor
 	registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
@@ -462,7 +463,7 @@ func (s *Scanner) WriteFiles(dir string) (int, error) {
 	}
 	defer func() { _ = root.Close() }() // a directory handle; nothing to flush
 
-	registry, errs := rebuild(s.files)
+	registry, errs := s.rebuild()
 	written := 0
 	registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		if fd.Path() == descriptorProto {

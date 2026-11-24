@@ -1,12 +1,15 @@
 package scanner
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestSetFileOption(t *testing.T) {
@@ -94,5 +97,151 @@ func TestSetFileOptionErrors(t *testing.T) {
 				t.Errorf("fileOptions = %v after an error, want nil", s.fileOptions)
 			}
 		})
+	}
+}
+
+func TestSetGoPackage(t *testing.T) {
+	timestamp := protodesc.ToFileDescriptorProto(timestamppb.File_google_protobuf_timestamp_proto)
+	files := []*descriptorpb.FileDescriptorProto{
+		{
+			Name: new("Foo/Bar/FooBar.proto"), Syntax: new("proto3"), Package: new("Foo.Bar"),
+			Options:     &descriptorpb.FileOptions{GoPackage: new("example.com/original")},
+			MessageType: []*descriptorpb.DescriptorProto{message("Msg", 1)},
+		},
+		{
+			Name: new("api/user.proto"), Syntax: new("proto3"), Package: new("api"),
+			Dependency: []string{"Foo/Bar/FooBar.proto", "google/protobuf/timestamp.proto", "missing.proto"},
+			MessageType: []*descriptorpb.DescriptorProto{{
+				Name: new("User"),
+				Field: []*descriptorpb.FieldDescriptorProto{
+					{
+						Name: new("msg"), Number: new(int32(1)), JsonName: new("msg"),
+						Label:    new(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
+						Type:     new(descriptorpb.FieldDescriptorProto_TYPE_MESSAGE),
+						TypeName: new(".Foo.Bar.Msg"),
+					},
+					{
+						Name: new("at"), Number: new(int32(2)), JsonName: new("at"),
+						Label:    new(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
+						Type:     new(descriptorpb.FieldDescriptorProto_TYPE_MESSAGE),
+						TypeName: new(".google.protobuf.Timestamp"),
+					},
+				},
+			}},
+		},
+		{Name: new("dir/nopackage.proto"), Syntax: new("proto3")},
+		timestamp,
+	}
+	s := New(nil)
+	if err := s.ScanFile(writeDescriptors(t, files...)); err != nil {
+		t.Fatalf("ScanFile: %v", err)
+	}
+	// SetGoPackage replaces a go_package set by SetFileOption, whichever is
+	// called first.
+	if err := s.SetFileOption("go_package", "example.com/ignored"); err != nil {
+		t.Fatal(err)
+	}
+	s.SetGoPackage("example.com/proto/")
+
+	out := t.TempDir()
+	if n, err := s.WriteFiles(out); err != nil || n != len(files) {
+		t.Fatalf("WriteFiles = %d, %v, want %d, nil", n, err, len(files))
+	}
+
+	want := map[string]string{
+		"foo_barpb/FooBar.proto": `syntax = "proto3";
+
+package Foo.Bar;
+
+option go_package = "example.com/proto/foo_barpb";
+
+message Msg {
+  int32 a = 1;
+}
+`,
+		"apipb/user.proto": `syntax = "proto3";
+
+package api;
+
+import "foo_barpb/FooBar.proto";
+import "google/protobuf/timestamp.proto";
+import "missing.proto";
+
+option go_package = "example.com/proto/apipb";
+
+message User {
+  .Foo.Bar.Msg msg = 1;
+  .google.protobuf.Timestamp at = 2;
+}
+`,
+		"nopackage.proto": `syntax = "proto3";
+
+option go_package = "example.com/proto";
+`,
+	}
+	for name, want := range want {
+		got, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(name)))
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		if string(got) != want {
+			t.Errorf("%s:\n%s\nwant:\n%s", name, got, want)
+		}
+	}
+
+	// The well-known types stay where they are, with their own go_package
+	// and only the options set by SetFileOption.
+	got, err := os.ReadFile(filepath.Join(out, "google", "protobuf", "timestamp.proto"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `option go_package = "example.com/ignored";`) {
+		t.Errorf("timestamp.proto does not have go_package from SetFileOption:\n%s", got)
+	}
+}
+
+func TestSetGoPackageConflict(t *testing.T) {
+	files := []*descriptorpb.FileDescriptorProto{
+		{Name: new("b/x.proto"), Syntax: new("proto3"), Package: new("p")},
+		{Name: new("a/x.proto"), Syntax: new("proto3"), Package: new("p")},
+		{
+			Name: new("c/y.proto"), Syntax: new("proto3"), Package: new("q"),
+			Dependency: []string{"b/x.proto"},
+		},
+	}
+	s := New(nil)
+	if err := s.ScanFile(writeDescriptors(t, files...)); err != nil {
+		t.Fatalf("ScanFile: %v", err)
+	}
+	s.SetGoPackage("example.com/proto")
+
+	var buf strings.Builder
+	err := s.Dump(&buf)
+	errs, ok := errors.AsType[Errors](err)
+	if !ok || len(errs) != 1 {
+		t.Fatalf("Dump error = %v, want Errors with 1 error", err)
+	}
+	if want := "layout b/x.proto: ppb/x.proto is already used by a/x.proto"; errs[0].Error() != want {
+		t.Errorf("errs[0] = %q, want %q", errs[0], want)
+	}
+	want := `// ppb/x.proto
+syntax = "proto3";
+
+package p;
+
+option go_package = "example.com/proto/ppb";
+
+// qpb/y.proto
+syntax = "proto3";
+
+package q;
+
+import "b/x.proto";
+
+option go_package = "example.com/proto/qpb";
+`
+	if got := buf.String(); got != want {
+		t.Errorf("Dump output:\n%s\nwant:\n%s", got, want)
 	}
 }

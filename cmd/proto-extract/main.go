@@ -22,10 +22,15 @@ func main() {
 		}
 		return s.SetFileOption(name, value)
 	})
+	flag.Func("go_package", "write each proto package as a Go package under import `prefix`,\n"+
+		"in a directory of its own, overriding any go_package set by -option", func(prefix string) error {
+		s.SetGoPackage(prefix)
+		return nil
+	})
 	flag.Parse()
 	args := flag.Args()
 	if *output == "" || len(args) != 1 {
-		log.Fatal("proto-extract -output DEST [-option name=value]... SOURCE")
+		log.Fatal("proto-extract -output DEST [-go_package prefix] [-option name=value]... SOURCE")
 	}
 
 	if err := s.Scan(args[0]); err != nil {
