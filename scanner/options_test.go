@@ -100,7 +100,54 @@ func TestSetFileOptionErrors(t *testing.T) {
 	}
 }
 
+// TestSetGoPackage checks that SetGoPackage alone sets go_package, leaving
+// the files at their paths and their imports as they are.
 func TestSetGoPackage(t *testing.T) {
+	files := []*descriptorpb.FileDescriptorProto{
+		{
+			Name: new("Foo/Bar/FooBar.proto"), Syntax: new("proto3"), Package: new("Foo.Bar"),
+			Options: &descriptorpb.FileOptions{GoPackage: new("example.com/original")},
+		},
+		{
+			Name: new("api/user.proto"), Syntax: new("proto3"), Package: new("api"),
+			Dependency: []string{"Foo/Bar/FooBar.proto"},
+		},
+	}
+	s := New(nil)
+	if err := s.ScanFile(writeDescriptors(t, files...)); err != nil {
+		t.Fatalf("ScanFile: %v", err)
+	}
+	s.SetGoPackage("example.com/proto")
+
+	var buf strings.Builder
+	if err := s.Dump(&buf); err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+	want := `// Foo/Bar/FooBar.proto
+syntax = "proto3";
+
+package Foo.Bar;
+
+option go_package = "example.com/proto/foobarpb";
+
+// api/user.proto
+syntax = "proto3";
+
+package api;
+
+import "Foo/Bar/FooBar.proto";
+
+option go_package = "example.com/proto/userpb";
+`
+	if got := buf.String(); got != want {
+		t.Errorf("Dump output:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestSetRenameFiles checks that with SetRenameFiles each file is moved
+// into the directory of its Go package, and imports of it are changed to
+// match.
+func TestSetRenameFiles(t *testing.T) {
 	timestamp := protodesc.ToFileDescriptorProto(timestamppb.File_google_protobuf_timestamp_proto)
 	files := []*descriptorpb.FileDescriptorProto{
 		{
@@ -129,7 +176,8 @@ func TestSetGoPackage(t *testing.T) {
 				},
 			}},
 		},
-		{Name: new("dir/nopackage.proto"), Syntax: new("proto3")},
+		// Characters that cannot be in a Go package name become "_".
+		{Name: new("dir/my-file.v2.proto"), Syntax: new("proto3")},
 		timestamp,
 	}
 	s := New(nil)
@@ -142,6 +190,7 @@ func TestSetGoPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.SetGoPackage("example.com/proto/")
+	s.SetRenameFiles(true)
 
 	out := t.TempDir()
 	// All but timestamp.proto, a well-known file.
@@ -150,34 +199,34 @@ func TestSetGoPackage(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"foo_barpb/FooBar.proto": `syntax = "proto3";
+		"foobarpb/FooBar.proto": `syntax = "proto3";
 
 package Foo.Bar;
 
-option go_package = "example.com/proto/foo_barpb";
+option go_package = "example.com/proto/foobarpb";
 
 message Msg {
   int32 a = 1;
 }
 `,
-		"apipb/user.proto": `syntax = "proto3";
+		"userpb/user.proto": `syntax = "proto3";
 
 package api;
 
-import "foo_barpb/FooBar.proto";
+import "foobarpb/FooBar.proto";
 import "google/protobuf/timestamp.proto";
 import "missing.proto";
 
-option go_package = "example.com/proto/apipb";
+option go_package = "example.com/proto/userpb";
 
 message User {
   .Foo.Bar.Msg msg = 1;
   .google.protobuf.Timestamp at = 2;
 }
 `,
-		"nopackage.proto": `syntax = "proto3";
+		"my_file_v2pb/my-file.v2.proto": `syntax = "proto3";
 
-option go_package = "example.com/proto";
+option go_package = "example.com/proto/my_file_v2pb";
 `,
 	}
 	for name, want := range want {
@@ -190,12 +239,13 @@ option go_package = "example.com/proto";
 			t.Errorf("%s:\n%s\nwant:\n%s", name, got, want)
 		}
 	}
-
 }
 
-func TestSetGoPackageConflict(t *testing.T) {
+func TestSetRenameFilesConflict(t *testing.T) {
+	// The directory comes from the file name alone, so files with the same
+	// name conflict even in different packages.
 	files := []*descriptorpb.FileDescriptorProto{
-		{Name: new("b/x.proto"), Syntax: new("proto3"), Package: new("p")},
+		{Name: new("b/x.proto"), Syntax: new("proto3"), Package: new("r")},
 		{Name: new("a/x.proto"), Syntax: new("proto3"), Package: new("p")},
 		{
 			Name: new("c/y.proto"), Syntax: new("proto3"), Package: new("q"),
@@ -207,6 +257,7 @@ func TestSetGoPackageConflict(t *testing.T) {
 		t.Fatalf("ScanFile: %v", err)
 	}
 	s.SetGoPackage("example.com/proto")
+	s.SetRenameFiles(true)
 
 	var buf strings.Builder
 	err := s.Dump(&buf)
@@ -214,24 +265,24 @@ func TestSetGoPackageConflict(t *testing.T) {
 	if !ok || len(errs) != 1 {
 		t.Fatalf("Dump error = %v, want Errors with 1 error", err)
 	}
-	if want := "layout b/x.proto: ppb/x.proto is already used by a/x.proto"; errs[0].Error() != want {
+	if want := "layout b/x.proto: xpb/x.proto is already used by a/x.proto"; errs[0].Error() != want {
 		t.Errorf("errs[0] = %q, want %q", errs[0], want)
 	}
-	want := `// ppb/x.proto
+	want := `// xpb/x.proto
 syntax = "proto3";
 
 package p;
 
-option go_package = "example.com/proto/ppb";
+option go_package = "example.com/proto/xpb";
 
-// qpb/y.proto
+// ypb/y.proto
 syntax = "proto3";
 
 package q;
 
 import "b/x.proto";
 
-option go_package = "example.com/proto/qpb";
+option go_package = "example.com/proto/ypb";
 `
 	if got := buf.String(); got != want {
 		t.Errorf("Dump output:\n%s\nwant:\n%s", got, want)

@@ -113,15 +113,20 @@ replacing any value the file already has. It may be repeated:
 proto-extract -output protos -option go_package=example.com/proto /Applications/Example.app
 ```
 
-`-go_package prefix` instead lays the output out as one Go package per
-proto package, with `DEST` standing for the import path `prefix`. A file in
-`package Foo.Bar;` is written to `DEST/foo_barpb/` under its base name, with
-`go_package` set to `prefix/foo_barpb`, and imports of it are changed to
-match. Files with no package go in `DEST` itself, with `go_package` set to
-`prefix`. This `go_package` replaces one given with `-option`:
+`-go_package prefix` instead gives each file a Go package of its own under
+the import path `prefix`, named after the file: `Foo/Bar/FooBar.proto` gets
+`go_package` set to `prefix/foobarpb`. The name is the file's base name
+without `.proto`, in lower case, with `.` and any other character not
+allowed in a Go identifier replaced by `_`, and `pb` added. Since `protoc`
+does not allow files to import each other, the Go packages cannot form an
+import cycle, as they could if each proto package were one Go package.
+This `go_package` replaces one given with `-option`. The files keep their
+paths, unless `-rename` is also given: then each is written into the
+directory of its Go package, as `DEST/foobarpb/FooBar.proto`, so that
+`DEST` stands for `prefix`, and imports of it are changed to match:
 
 ```sh
-proto-extract -output protos -go_package example.com/proto /Applications/Example.app
+proto-extract -output protos -go_package example.com/proto -rename /Applications/Example.app
 ```
 
 ## Development

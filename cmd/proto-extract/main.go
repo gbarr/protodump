@@ -22,15 +22,19 @@ func main() {
 		}
 		return s.SetFileOption(name, value)
 	})
-	flag.Func("go_package", "write each proto package as a Go package under import `prefix`,\n"+
-		"in a directory of its own, overriding any go_package set by -option", func(prefix string) error {
-		s.SetGoPackage(prefix)
-		return nil
-	})
+	goPackage := flag.String("go_package", "", "set go_package in each file to a Go package of its own under import\n"+
+		"`prefix`, named after the file, overriding any go_package set by -option")
+	rename := flag.Bool("rename", false, "with -go_package, write each file into the directory named by its Go\n"+
+		"package, so that DEST stands for the import path prefix")
 	flag.Parse()
+	s.SetGoPackage(*goPackage)
+	s.SetRenameFiles(*rename)
 	args := flag.Args()
 	if *output == "" || len(args) != 1 {
-		log.Fatal("proto-extract -output DEST [-go_package prefix] [-option name=value]... SOURCE")
+		log.Fatal("proto-extract -output DEST [-go_package prefix [-rename]] [-option name=value]... SOURCE")
+	}
+	if *rename && *goPackage == "" {
+		log.Fatal("-rename needs -go_package")
 	}
 
 	if err := s.Scan(args[0]); err != nil {

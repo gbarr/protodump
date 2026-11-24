@@ -47,6 +47,7 @@ type Scanner struct {
 	files       *protoregistry.Files
 	fileOptions *descriptorpb.FileOptions // set by SetFileOption
 	goPackage   string                    // set by SetGoPackage
+	renameFiles bool                      // set by SetRenameFiles
 }
 
 // New returns a Scanner that registers into files, or into a new, empty
